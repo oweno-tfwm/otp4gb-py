@@ -1,0 +1,64 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.open-innovations</groupId>
+  <artifactId>otp4gb</artifactId>
+  <version>1.0</version>
+
+  <repositories>
+    <repository>
+      <id>jitpack.io</id>
+      <url>https://jitpack.io</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.github.twalcari</groupId>
+      <artifactId>gtfs-filter</artifactId>
+      <version>v0.1.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.opentripplanner</groupId>
+      <artifactId>otp</artifactId>
+      <version>1.5.0</version>
+      <classifier>shaded</classifier>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.3.0</version>
+        <configuration>
+          <outputDirectory>bin/lib</outputDirectory>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>com.coderplus.maven.plugins</groupId>
+        <artifactId>copy-rename-maven-plugin</artifactId>
+        <version>1.0</version>
+        <configuration>
+          <fileSets>
+            <fileSet>
+              <sourceFile>bin/lib/gtfs-filter-v0.1.1.jar</sourceFile>
+              <destinationFile>bin/gtfs-filter-0.1.jar</destinationFile>
+            </fileSet>
+            <fileSet>
+              <sourceFile>bin/lib/otp-1.5.0-shaded.jar</sourceFile>
+              <destinationFile>bin/otp-1.5.0-shaded.jar</destinationFile>
+            </fileSet>                
+          </fileSets>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
