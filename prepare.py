@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 import getopt
 import logging
 import os
@@ -16,20 +17,22 @@ logger = logging.getLogger()
 config = {}
 
 
-def usage():
+def usage(exit_code=1):
     usage_string = '''
-prepare.py [-F|--force] <path to config root>
+prepare.py [-F|--force] -d date <path to config root>
 
+  -d, --date\tDate for routing graph preparation
   -F, --force\tForce recreation
     '''
     print(usage_string)
+    exit(exit_code)
 
 
 def main():
     try:
         opts, args = getopt.getopt(sys.argv[1:],
-                                   'F',
-                                   ['force'])
+                                   'd:F',
+                                   ['date=', 'force'])
     except getopt.GetoptError as err:
         logging.error(err)
         sys.exit(2)
@@ -39,7 +42,7 @@ def main():
     except IndexError:
         logger.error('No path provided')
         usage()
-        exit(1)
+
     logger.debug('Base folder is %s', opt_base_folder)
 
     if not os.path.exists(opt_base_folder):
@@ -47,17 +50,31 @@ def main():
         exit(1)
 
     opt_force = False
+    opt_date = None
     for o, a in opts:
         if o == '-F' or o == '--force':
             opt_force = True
-        else:
-            assert False, "Unhandled option"
+            continue
+        if o == '-d' or o == '--date':
+            try:
+                opt_date = date.fromisoformat(a)
+            except:
+                logger.error('Invalid date %s', a)
+                opt_date = None
+            continue
+        assert False, "Unhandled option"
 
     input_dir = os.path.join(opt_base_folder, 'input')
 
     filtered_graph_folder = os.path.join(opt_base_folder, 'graphs', 'filtered')
 
-    date_filter_string = '2019-09-10:2019-09-11'
+    if not opt_date:
+        logger.error('No date provided')
+        usage()
+    logger.debug('opt_date is %s', opt_date)
+
+    date_filter_string = '{}:{}'.format(opt_date, opt_date + timedelta(days=1))
+    logger.debug('date_filter_string is %s', date_filter_string)
 
     extents = bounds.get('bradford')
 
