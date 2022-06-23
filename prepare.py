@@ -9,6 +9,7 @@ import sys
 from otp4gb.osmconvert import osm_convert
 from otp4gb.config import BIN_DIR, CONF_DIR, MAX_HEAP
 from otp4gb.otp import prepare_graph
+from otp4gb.bounds import bounds
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -38,13 +39,7 @@ def main():
 
     date_filter_string = '2019-09-10:2019-09-11'
 
-    # Bradford
-    bradford_extents = {
-        'max_lon': -1.4186347996,
-        'min_lon': -2.0846809422,
-        'max_lat': 53.9786464325,
-        'min_lat': 53.6054851748,
-    }
+    extents = bounds.get('bradford')
 
     if opt_force:
         shutil.rmtree(filtered_graph_folder, ignore_errors=True)
@@ -61,12 +56,12 @@ def main():
         filter_inputs(input_dir,
                       output_dir=filtered_graph_folder,
                       date=date_filter_string,
-                      extents=bradford_extents)
+                      extents=extents)
         # Crop the osm.pbf map of GB to the bounding box
         # If you are not using Windows a version of osmconvert on your platform may be available via https://wiki.openstreetmap.org/wiki/Osmconvert
         osm_convert(os.path.join(input_dir, 'great-britain-latest.osm.pbf'),
                     os.path.join(filtered_graph_folder, 'gbfiltered.pbf'),
-                    extents=bradford_extents,
+                    extents=extents,
                     )
 
         shutil.copy(os.path.join(CONF_DIR, 'build-config.json'),
