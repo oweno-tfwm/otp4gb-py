@@ -8,13 +8,13 @@ This is a port of the [OTP4GB][OTP4GB] tool written by Tom Forth at Open Innovat
 
 Make sure you have a working Java environment, and have Maven installed.
 
-Download the java dependencies.
+Run the setup script to install dependencies.
 
 ```
-mvn dependency:copy-dependencies copy-rename:rename  
+python setup.py
 ```
 
-Download http://m.m.i24.cc/osmconvert.exe to the bin directory
+This will run maven and download the osmconvert64 executable for Windows.
 
 ## Running
 
