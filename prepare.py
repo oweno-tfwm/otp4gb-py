@@ -11,9 +11,18 @@ from otp4gb.otp import prepare_graph
 from otp4gb.bounds import bounds
 
 logging.basicConfig(level=logging.DEBUG)
-
+logger = logging.getLogger()
 
 config = {}
+
+
+def usage():
+    usage_string = '''
+prepare.py [-F|--force] <path to config root>
+
+  -F, --force\tForce recreation
+    '''
+    print(usage_string)
 
 
 def main():
@@ -24,8 +33,20 @@ def main():
     except getopt.GetoptError as err:
         logging.error(err)
         sys.exit(2)
+
+    try:
+        opt_base_folder = os.path.abspath(args[0])
+    except IndexError:
+        logger.error('No path provided')
+        usage()
+        exit(1)
+    logger.debug('Base folder is %s', opt_base_folder)
+
+    if not os.path.exists(opt_base_folder):
+        logger.error('Base path %s does not exist', opt_base_folder)
+        exit(1)
+
     opt_force = False
-    opt_base_folder = os.path.abspath('Assets')
     for o, a in opts:
         if o == '-F' or o == '--force':
             opt_force = True
