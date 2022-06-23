@@ -15,6 +15,7 @@ config = {}
 # if you're running on a virtual machine (no virtual memory/page disk) this must not exceed the total amount of RAM. 80G = 80 gigabytes.
 MAX_HEAP = '80G'
 BIN_DIR = os.path.abspath('bin')
+CONF_DIR = os.path.abspath('config')
 
 otp_jar_file = os.path.join(BIN_DIR, 'otp-1.5.0-shaded.jar')
 otp_base = [
@@ -24,6 +25,7 @@ otp_base = [
     '-Xmx{}'.format(MAX_HEAP),
     '-jar', otp_jar_file
 ]
+
 
 
 def main():
@@ -79,9 +81,9 @@ def main():
                     extents=bradford_extents,
                     )
 
-        shutil.copy(os.path.join(input_dir, 'build-config.json'),
+        shutil.copy(os.path.join(CONF_DIR, 'build-config.json'),
                     filtered_graph_folder)
-        shutil.copy(os.path.join(input_dir, 'router-config.json'),
+        shutil.copy(os.path.join(CONF_DIR, 'router-config.json'),
                     filtered_graph_folder)
 
     if os.path.exists(os.path.join(filtered_graph_folder, 'graph.obj')):
