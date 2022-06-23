@@ -19,8 +19,9 @@ config = {}
 
 def usage(exit_code=1):
     usage_string = '''
-prepare.py [-F|--force] -d date <path to config root>
+prepare.py [-F|--force] -b bounds -d date <path to config root>
 
+  -b, --bounds\tBounds (as defined in bounds.py) for the filter
   -d, --date\tDate for routing graph preparation
   -F, --force\tForce recreation
     '''
@@ -31,8 +32,8 @@ prepare.py [-F|--force] -d date <path to config root>
 def main():
     try:
         opts, args = getopt.getopt(sys.argv[1:],
-                                   'd:F',
-                                   ['date=', 'force'])
+                                   'b:d:F',
+                                   ['bounds=', 'date=', 'force'])
     except getopt.GetoptError as err:
         logging.error(err)
         sys.exit(2)
@@ -51,7 +52,15 @@ def main():
 
     opt_force = False
     opt_date = None
+    extents = None
     for o, a in opts:
+        if o == '-b' or o == '--bounds':
+            try:
+                extents = bounds[a]
+            except:
+                logger.error('Invalid bounds %s', a)
+                logger.error('Available bounds ->\n%s', '\n'.join([a for a in bounds.keys()]))
+            continue
         if o == '-F' or o == '--force':
             opt_force = True
             continue
@@ -76,7 +85,10 @@ def main():
     date_filter_string = '{}:{}'.format(opt_date, opt_date + timedelta(days=1))
     logger.debug('date_filter_string is %s', date_filter_string)
 
-    extents = bounds.get('bradford')
+    if not extents:
+        logger.error('No extents provided')
+        usage()
+    logger.debug('Extents set to %s', extents)
 
     if opt_force:
         shutil.rmtree(filtered_graph_folder, ignore_errors=True)
