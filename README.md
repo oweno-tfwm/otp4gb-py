@@ -20,11 +20,19 @@ This will run maven and download the osmconvert64 executable for Windows.
 
 ### `prepare.py`
 
-This script prepares the osm directory.
+This script prepares the OTP directory.
+
+Usage:
+
+```prepare.py [-F] -d <date> -b <bounds name> <directory>
+```
 
 command line options
 
-  `-F` Force overwrite of existing files
+
+* `-b, --bounds` Specify bounds
+* `-d, --date` Specify date for filtering
+* `-F, --force` Force overwrite of existing files
 
 Environment config
 
