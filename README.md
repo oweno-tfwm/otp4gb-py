@@ -13,3 +13,19 @@ Download the java dependencies.
 ```
 mvn dependency:copy-dependencies copy-rename:rename  
 ```
+
+Download http://m.m.i24.cc/osmconvert.exe to the bin directory
+
+## Running
+
+### `prepare.py`
+
+This script prepares the osm directory.
+
+command line options
+
+  `-F` Force overwrite of existing files
+
+Environment config
+
+  `OSMCONVERT_DOCKER` - if set, will use a dockerised version of osmconvert (useful to run on macos, where there appears to be no native osmconvert)

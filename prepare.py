@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 
+from otp4gb.osmconvert import osm_convert
+from otp4gb.config import BIN_DIR, CONF_DIR
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -14,8 +16,6 @@ config = {}
 
 # if you're running on a virtual machine (no virtual memory/page disk) this must not exceed the total amount of RAM. 80G = 80 gigabytes.
 MAX_HEAP = '80G'
-BIN_DIR = os.path.abspath('bin')
-CONF_DIR = os.path.abspath('config')
 
 otp_jar_file = os.path.join(BIN_DIR, 'otp-1.5.0-shaded.jar')
 otp_base = [
@@ -25,7 +25,6 @@ otp_base = [
     '-Xmx{}'.format(MAX_HEAP),
     '-jar', otp_jar_file
 ]
-
 
 
 def main():
@@ -136,20 +135,6 @@ def gtfs_filter(timetable_file, output_dir, location_filter, date_filter):
     subprocess.run(' '.join(command), shell=True)
     shutil.make_archive(output_file, 'zip', temp_folder)
     shutil.rmtree(temp_folder)
-
-
-def osm_convert(input, output, extents):
-    bounds = ','.join([str(x) for x in operator.itemgetter(
-        'min_lon', 'min_lat', 'max_lon', 'max_lat')(extents)])
-    logging.debug(bounds)
-
-    expr = 'osmconvert64.exe {input} -b={bounds} --complete-ways -o={output}'.format(
-        input=input,
-        output=output,
-        bounds=bounds
-    )
-    logging.info(expr)
-    subprocess.call(expr, shell=True)
 
 
 def prepare_graph(build_dir):
