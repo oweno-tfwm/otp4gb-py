@@ -18,6 +18,8 @@ This will run maven and download the osmconvert64 executable for Windows.
 
 You will also need to install a series of python libraries, which are captured in requirements files. There are two: one for conda and one for pip.
 
+Populate the `assets` folder with a copy of the OSM map and any GTFS files you want to include in the analysis.
+
 ## Running
 
 You will need to create a directory to set up the tool. This needs the following structure:

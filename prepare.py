@@ -8,7 +8,7 @@ from otp4gb.gtfs_filter import filter_gtfs_files
 from yaml import safe_load
 
 from otp4gb.osmconvert import osm_convert
-from otp4gb.config import CONF_DIR
+from otp4gb.config import ASSET_DIR, CONF_DIR
 from otp4gb.otp import prepare_graph
 
 logging.basicConfig(level=logging.DEBUG)
@@ -24,7 +24,7 @@ def load_config(dir):
     with open(os.path.join(dir, 'config.yml')) as conf_file:
         config = safe_load(conf_file)
     return config
-        
+
 
 def usage(exit_code=1):
     usage_string = '''
@@ -118,14 +118,14 @@ def main():
         # And then put them all in one folder, which we then use to run an open trip planner instance.
         # see https://github.com/odileeds/ATOCCIF2GTFS for timetable files
         # These need to reside in base_folder/input/gtfs
-        filter_gtfs_files(os.path.join(input_dir, 'gtfs'),
+        filter_gtfs_files(config.get('gtfs_files'),
                           output_dir=filtered_graph_folder,
                           date=date_filter_string,
                           extents=extents)
 
         # Crop the osm.pbf map of GB to the bounding box
         # If you are not using Windows a version of osmconvert on your platform may be available via https://wiki.openstreetmap.org/wiki/Osmconvert
-        osm_convert(os.path.join(input_dir, 'great-britain-latest.osm.pbf'),
+        osm_convert(os.path.join(ASSET_DIR, config.get('osm_file')),
                     os.path.join(filtered_graph_folder, 'gbfiltered.pbf'),
                     extents=extents,
                     )

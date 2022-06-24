@@ -1,8 +1,17 @@
 # Date for filtered GTFS files
-date: 2019-09-11
-# These are for Bradford
+date: 2019-09-10
+
+# Specify the extents to clip the graph to. These are for Bradford.
+# Alternatively, you can provide a named extent (as defined in otp4gb/extents.yml) as a command line -b/--bounds option
 extents:
   max_lon: -1.418634
   min_lon: -2.084680
   max_lat: 53.978646
   min_lat: 53.605485
+
+# Specify the osm file to use
+osm_file: great-britain-latest.osm.pbf
+
+# Specify the list of GTFS files to process
+gtfs_files:
+  - Y_GTFS.zip

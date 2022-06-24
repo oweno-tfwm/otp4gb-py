@@ -10,7 +10,7 @@ otp_jar_file = os.path.join(BIN_DIR, 'otp-1.5.0-shaded.jar')
 otp_base = [
     'java',
     '--add-opens', 'java.base/java.util=ALL-UNNAMED',
-    '--add-opens', 'java.base/java.io=ALL-UNNAMED'
+    '--add-opens', 'java.base/java.io=ALL-UNNAMED',
     '-Xmx{}'.format(MAX_HEAP),
     '-jar', otp_jar_file
 ]

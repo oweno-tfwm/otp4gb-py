@@ -4,18 +4,18 @@ import os
 import shutil
 import subprocess
 
-from otp4gb.config import BIN_DIR, MAX_HEAP
+from otp4gb.config import BIN_DIR, MAX_HEAP, ASSET_DIR
 
 logger = logging.getLogger(__name__)
 
 
-def filter_gtfs_files(input_dir, output_dir, date=None, extents=None):
+def filter_gtfs_files(gtfs_files, output_dir, date=None, extents=None):
     location = ":".join([str(x) for x in operator.itemgetter(
         'min_lat', 'min_lon', 'max_lat', 'max_lon')(extents)])
     logger.debug(location)
 
-    timetable_files = [os.path.join(input_dir, f)
-                       for f in os.listdir(input_dir)]
+    timetable_files = [os.path.join(ASSET_DIR, f)
+                       for f in gtfs_files]
 
     for timetable_file in timetable_files:
         gtfs_filter(timetable_file,
