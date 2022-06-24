@@ -24,11 +24,11 @@ This script prepares the OTP directory.
 
 Usage:
 
-```prepare.py [-F] -d <date> -b <bounds name> <directory>
+```
+prepare.py [-F] -d <date> -b <bounds name> <directory>
 ```
 
 command line options
-
 
 * `-b, --bounds` Specify bounds
 * `-d, --date` Specify date for filtering
