@@ -5,17 +5,26 @@ import os
 import shutil
 import sys
 from otp4gb.gtfs_filter import filter_gtfs_files
+from yaml import safe_load
 
 from otp4gb.osmconvert import osm_convert
 from otp4gb.config import CONF_DIR
 from otp4gb.otp import prepare_graph
-from otp4gb.bounds import bounds
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
-config = {}
+def load_bounds():
+    with open(os.path.join('otp4gb', 'bounds.yml')) as bounds_file:
+        bounds = safe_load(bounds_file)
+    return bounds
 
+
+def load_config(dir):
+    with open(os.path.join(dir, 'config.yml')) as conf_file:
+        config = safe_load(conf_file)
+    return config
+        
 
 def usage(exit_code=1):
     usage_string = '''
@@ -46,13 +55,19 @@ def main():
 
     logger.debug('Base folder is %s', opt_base_folder)
 
+    config = load_config(opt_base_folder)
+    logger.debug('config = %s', config)
+
+    bounds = load_bounds()
+    logger.debug('bounds = %s', bounds)
+
     if not os.path.exists(opt_base_folder):
         logger.error('Base path %s does not exist', opt_base_folder)
         exit(1)
 
     opt_force = False
-    opt_date = None
-    extents = None
+    opt_date = config.get('date')
+    extents = config.get('extents')
     for o, a in opts:
         if o == '-b' or o == '--bounds':
             try:

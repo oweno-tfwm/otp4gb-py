@@ -1,0 +1,8 @@
+# Date for filtered GTFS files
+date: 2019-09-11
+# These are for Bradford
+extents:
+  max_lon: -1.418634
+  min_lon: -2.084680
+  max_lat: 53.978646
+  min_lat: 53.605485

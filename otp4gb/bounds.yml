@@ -1,0 +1,35 @@
+bradford:
+  max_lon: -1.4186347996
+  min_lon: -2.0846809422
+  max_lat: 53.9786464325
+  min_lat: 53.6054851748
+greater_manchester:
+  min_lon: -2.8086
+  max_lon: -1.7759
+  min_lat: 53.2318
+  max_lat: 53.839
+scotland:
+  min_lon: -10
+  max_lon: 10
+  min_lat: 54.6
+  max_lat: 80
+gb:
+  min_lon: -10
+  max_lon: 10
+  min_lat: 40
+  max_lat: 80
+north_england_zone_of_influence:
+  min_lon: -3.7731
+  max_lon: 0.3797
+  min_lat: 52.8258
+  max_lat: 56.0872
+north_england_and_midlands:
+  max_lon: 0.509896555
+  min_lon: -3.693384901
+  max_lat: 55.811076522
+  min_lat: 51.805604392
+north_england:
+  max_lon: 0.3028
+  min_lon: -3.6852
+  max_lat: 55.8200
+  min_lat: 52.8828

@@ -16,7 +16,15 @@ python setup.py
 
 This will run maven and download the osmconvert64 executable for Windows.
 
+You will also need to install a series of python libraries, which are captured in requirements files. There are two: one for conda and one for pip.
+
 ## Running
+
+You will need to create a directory to set up the tool. This needs the following structure:
+
+* `config.yml` A file with config for the run. A sample is provided in the root of this project.
+* `input` directory containing the latest osm download
+* `input\gtfs` directory containing the GTFS files that are to be included in the OTP routing graph
 
 ### `prepare.py`
 
@@ -25,7 +33,7 @@ This script prepares the OTP directory.
 Usage:
 
 ```
-prepare.py [-F] -d <date> -b <bounds name> <directory>
+prepare.py [-F] [-d <date>] [-b <bounds name>] <directory>
 ```
 
 command line options
