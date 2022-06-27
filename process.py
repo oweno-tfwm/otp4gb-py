@@ -1,3 +1,5 @@
+import geopandas as gpd
+import json
 import logging
 import os
 import sys
@@ -30,17 +32,23 @@ def main():
 
     # Define acceptable modes
     modes = [
-        'WALK',
-        'CAR',
-        'TRANSIT,WALK',
+        # 'WALK',
+        # 'CAR',
+        # 'TRANSIT,WALK',
         'BUS,WALK',
-        'BICYCLE'
+        # 'BICYCLE'
     ]
 
     # Create output directory
     isochrones_dir = os.path.join(opt_base_folder, 'isochrones')
     if not os.path.exists(isochrones_dir):
         os.makedirs(isochrones_dir)
+
+    def parse_to_geo(text):
+        data = json.loads(text)
+        crs = data['crs']['properties']['name']
+        data = gpd.GeoDataFrame.from_features(data, crs=crs)
+        return data
 
     def process_location(location, filename_pattern):
         for mode in modes:
@@ -52,9 +60,10 @@ def main():
                                    mode=mode,
                                    max_travel_time=180
                                    )
+            data = parse_to_geo(result)
             logger.debug("Writing to %s", geojson_file)
             with open(geojson_file, 'w') as f:
-                f.write(result)
+                f.write(data.to_json(drop_id=True))
 
     def get_isochrone(location, date, time, mode, max_travel_time=90, isochrone_step=15):
         cutoffs = [('cutoffSec', str(c*60))
