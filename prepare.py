@@ -8,22 +8,17 @@ from otp4gb.gtfs_filter import filter_gtfs_files
 from yaml import safe_load
 
 from otp4gb.osmconvert import osm_convert
-from otp4gb.config import ASSET_DIR, CONF_DIR
+from otp4gb.config import ASSET_DIR, CONF_DIR, load_config
 from otp4gb.otp import prepare_graph
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
+
 def load_bounds():
     with open(os.path.join('otp4gb', 'bounds.yml')) as bounds_file:
         bounds = safe_load(bounds_file)
     return bounds
-
-
-def load_config(dir):
-    with open(os.path.join(dir, 'config.yml')) as conf_file:
-        config = safe_load(conf_file)
-    return config
 
 
 def usage(exit_code=1):
@@ -74,7 +69,8 @@ def main():
                 extents = bounds[a]
             except:
                 logger.error('Invalid bounds %s', a)
-                logger.error('Available bounds ->\n%s', '\n'.join([a for a in bounds.keys()]))
+                logger.error('Available bounds ->\n%s',
+                             '\n'.join([a for a in bounds.keys()]))
             continue
         if o == '-F' or o == '--force':
             opt_force = True

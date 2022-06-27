@@ -1,5 +1,6 @@
 import os
 import sys
+from yaml import safe_load
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(sys.argv[0]))
@@ -9,3 +10,9 @@ ASSET_DIR = os.path.join(ROOT_DIR, 'assets')
 
 # if you're running on a virtual machine (no virtual memory/page disk) this must not exceed the total amount of RAM. 80G = 80 gigabytes.
 MAX_HEAP = os.environ.get('MAX_HEAP', '80G')
+
+
+def load_config(dir):
+    with open(os.path.join(dir, 'config.yml')) as conf_file:
+        config = safe_load(conf_file)
+    return config
