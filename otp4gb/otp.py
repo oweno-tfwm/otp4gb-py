@@ -67,19 +67,26 @@ class Server:
                 logger.info('Server not available. Retry %s', retries)
                 time.sleep(TIMEOUT)
 
-    def send_request(self):
-        url = urllib.parse.urlunparse([
-          'http',
-          'localhost:' + self.port,
-          '/otp/routers/filtered/',
-          None,
-          None,
-          None,
-        ])
+    def send_request(self, path='', query=None):
+        url = self.get_url(path, query)
         logger.debug("About to make request to %s", url)
-        # url = 'http://localhost:8080/otp/routers/filtered/'
-        request = urllib.request.Request(url)
-        urllib.request.urlopen(request)
+        request = urllib.request.Request(url, headers={
+          'Accept': 'application/json',
+        })
+        with urllib.request.urlopen(request) as r:
+            body = r.read().decode(r.info().get_param('charset') or 'utf-8')
+        return body
+
+    def get_url(self, path='', query=None):
+        qs = urllib.parse.urlencode(query, safe=',') if query else ''
+        url = urllib.parse.urlunsplit([
+            'http',
+            'localhost:' + self.port,
+            urllib.parse.urljoin('otp/routers/filtered/', path),
+            qs,
+            None,
+        ])
+        return url
 
     def stop(self):
         logger.info("Stopping OTP server")
