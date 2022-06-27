@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sys
+from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.otp import Server
 
 logging.basicConfig(level=logging.DEBUG)
@@ -16,8 +17,11 @@ def main():
     except IndexError:
         logger.error('No path provided')
 
-    opt_travel_time = datetime.datetime.fromisoformat('2019-09-10T08:30')
-    opt_buffer_size = 100
+    config = load_config(opt_base_folder)
+
+    opt_travel_time = config.get('travel_time')
+    opt_buffer_size = config.get('buffer_size', 100)
+    opt_modes = config.get('modes')
     opt_no_server = True
 
     # Start OTP Server
@@ -30,15 +34,6 @@ def main():
     # Filter MSOAs by bounding box
 
     # For each filtered MSOA add to Origins and Destinations
-
-    # Define acceptable modes
-    modes = [
-        'WALK',
-        'CAR',
-        'TRANSIT,WALK',
-        'BUS,WALK',
-        'BICYCLE'
-    ]
 
     # Create output directory
     isochrones_dir = os.path.join(opt_base_folder, 'isochrones')
@@ -54,11 +49,12 @@ def main():
     def buffer_geometry(data, buffer_size=100):
         new_geom = data.geometry.to_crs('EPSG:23030')
         buffered_geom = new_geom.buffer(buffer_size)
-        data.geometry = buffered_geom.to_crs(data.crs).simplify(tolerance=0.0001,preserve_topology=True)
+        data.geometry = buffered_geom.to_crs(data.crs).simplify(
+            tolerance=0.0001, preserve_topology=True)
         return data
 
     def process_location(location, location_name, filename_pattern="Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{location_name}_ToArriveBy_{arrival_time}_within_{journey_time}minutes.geojson"):
-        for mode in modes:
+        for mode in opt_modes:
             result = get_isochrone(location,
                                    date=opt_travel_time.date(),
                                    time=opt_travel_time.time(),
