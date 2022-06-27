@@ -15,10 +15,12 @@ def main():
 
     opt_date = '09-10-2019'
     opt_time = '8:00am'
+    opt_no_server = True
 
     # Start OTP Server
     server = Server(opt_base_folder)
-    server.start()
+    if not opt_no_server:
+        server.start()
 
     # Load Northern MSOAs
 

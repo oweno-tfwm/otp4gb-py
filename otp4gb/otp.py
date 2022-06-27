@@ -34,6 +34,7 @@ class Server:
     def __init__(self, base_dir, port=8080):
         self.base_dir = base_dir
         self.port = str(port)
+        self.process = None
 
     def start(self):
         graphs_dir = os.path.join(self.base_dir, 'graphs')
@@ -89,7 +90,10 @@ class Server:
         return url
 
     def stop(self):
+        if not self.process or self.process.poll():
+            logger.info('OTP server is not running')
+            return
         logger.info("Stopping OTP server")
         self.process.terminate()
-        self.process.wait(timeout=1)
+        self.process.wait(timeout=60)
         logger.info("OTP server stopped")
