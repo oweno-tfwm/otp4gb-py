@@ -4,7 +4,7 @@ import sys
 from otp4gb.otp import Server
 
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
 def main():
