@@ -79,7 +79,7 @@ class Server:
         return body
 
     def get_url(self, path='', query=None):
-        qs = urllib.parse.urlencode(query, safe=',') if query else ''
+        qs = urllib.parse.urlencode(query, safe=',:') if query else ''
         url = urllib.parse.urlunsplit([
             'http',
             'localhost:' + self.port,

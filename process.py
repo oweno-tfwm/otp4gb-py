@@ -1,3 +1,4 @@
+import datetime
 import geopandas as gpd
 import json
 import logging
@@ -15,8 +16,8 @@ def main():
     except IndexError:
         logger.error('No path provided')
 
-    opt_date = '09-10-2019'
-    opt_time = '8:00am'
+    opt_travel_time = datetime.datetime.fromisoformat('2019-09-10T08:30')
+    opt_buffer_size = 100
     opt_no_server = True
 
     # Start OTP Server
@@ -32,11 +33,11 @@ def main():
 
     # Define acceptable modes
     modes = [
-        # 'WALK',
-        # 'CAR',
-        # 'TRANSIT,WALK',
+        'WALK',
+        'CAR',
+        'TRANSIT,WALK',
         'BUS,WALK',
-        # 'BICYCLE'
+        'BICYCLE'
     ]
 
     # Create output directory
@@ -50,22 +51,41 @@ def main():
         data = gpd.GeoDataFrame.from_features(data, crs=crs)
         return data
 
-    def process_location(location, filename_pattern):
+    def buffer_geometry(data, buffer_size=100):
+        new_geom = data.geometry.to_crs('EPSG:23030')
+        buffered_geom = new_geom.buffer(buffer_size)
+        data.geometry = buffered_geom.to_crs(data.crs).simplify(tolerance=0.0001,preserve_topology=True)
+        return data
+
+    def process_location(location, location_name, filename_pattern="Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{location_name}_ToArriveBy_{arrival_time}_within_{journey_time}minutes.geojson"):
         for mode in modes:
-            geojson_file = os.path.join(
-                isochrones_dir, filename_pattern.format(mode=mode))
             result = get_isochrone(location,
-                                   date=opt_date,
-                                   time=opt_time,
+                                   date=opt_travel_time.date(),
+                                   time=opt_travel_time.time(),
                                    mode=mode,
                                    max_travel_time=180
                                    )
-            data = parse_to_geo(result)
-            logger.debug("Writing to %s", geojson_file)
-            with open(geojson_file, 'w') as f:
-                f.write(data.to_json(drop_id=True))
 
-    def get_isochrone(location, date, time, mode, max_travel_time=90, isochrone_step=15):
+            data = parse_to_geo(result)
+            data = buffer_geometry(data)
+
+            for i in range(data.shape[0]):
+                row = data.iloc[[i]]
+                journey_time = row['time']
+                geojson_file = os.path.join(
+                    isochrones_dir,
+                    filename_pattern.format(
+                        location_name=location_name,
+                        mode=mode,
+                        buffer_size=opt_buffer_size,
+                        arrival_time=opt_travel_time.isoformat(),
+                        journey_time=str(int(journey_time/60)).rjust(4, '_'),
+                    )
+                )
+                with open(geojson_file, 'w') as f:
+                    f.write(row.to_json())
+
+    def get_isochrone(location, date, time, mode, max_walk_distance=2500, max_travel_time=90, isochrone_step=15):
         cutoffs = [('cutoffSec', str(c*60))
                    for c in range(isochrone_step, max_travel_time+1, isochrone_step)]
         query = [
@@ -73,13 +93,13 @@ def main():
             ('mode', mode),
             ('date', date),
             ('time', time),
-            ('maxWalkDistance', '25000'),
+            ('maxWalkDistance', str(max_walk_distance)),
             ('arriveby', 'false'),
         ] + cutoffs
         return server.send_request(path='isochrone', query=query)
 
     # Calculate ISOChrones from Bradford (as a debug)
-    process_location([53.79456, -1.75197], "BradfordIsochones_{mode}.geojson")
+    process_location([53.79456, -1.75197], location_name='TEST-BRADFORD')
 
     # For each destination
     #   Calculate travel isochrone up to a number of cutoff times (1 to 90 mins)
