@@ -1,3 +1,4 @@
+import atexit
 import logging
 import os
 import subprocess
@@ -46,6 +47,7 @@ class Server:
         logger.info("Starting OTP server")
         logger.debug("About to run server with %s", command)
         self.process = subprocess.Popen(command, cwd=os.getcwd())
+        atexit.register(lambda: self.stop())
         self._check_server()
         logger.info("OTP server started")
 
