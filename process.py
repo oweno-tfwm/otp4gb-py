@@ -1,16 +1,17 @@
 
-import logging
 import multiprocessing
 import operator
 import os
+import pandas as pd
 import sys
 from otp4gb.batch import build_run_spec, run_batch, setup_worker
 from otp4gb.centroids import load_centroids
 from otp4gb.config import ASSET_DIR, load_config
+from otp4gb.logging import get_logger
 from otp4gb.otp import Server
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
+
+logger = get_logger()
 
 FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{location_name}_ToArriveBy_{arrival_time}_within_{journey_time}minutes.geojson"
 
@@ -35,13 +36,16 @@ def main():
     opt_max_walk_distance = 2500
     opt_no_server = False
     opt_num_workers = 8
+    opt_name_key = 'msoa11nm'
 
     # Start OTP Server
     server = Server(opt_base_folder)
     if not opt_no_server:
+        logger.info('Starting server')
         server.start()
 
     # Load Northern MSOAs
+    logger.info('Loading centroids')
     centroids = load_centroids(opt_centroids_path)
 
     # Filter MSOAs by bounding box
@@ -52,9 +56,10 @@ def main():
     if not os.path.exists(isochrones_dir):
         os.makedirs(isochrones_dir)
 
-    run_spec = build_run_spec(name_key='msoa11nm', modes=opt_modes, centroids=centroids, arrive_by=opt_travel_time,
+    logger.info('Building run spec')
+    run_spec = build_run_spec(name_key=opt_name_key, modes=opt_modes, centroids=centroids, arrive_by=opt_travel_time,
                               travel_time_max=opt_max_travel_time, travel_time_step=opt_isochrone_step,
-                              max_walk_distance=opt_max_walk_distance, server=server)[:1]
+                              max_walk_distance=opt_max_walk_distance, server=server)
 
     workers = multiprocessing.Pool(
         processes=opt_num_workers, initializer=setup_worker, initargs=({
@@ -62,9 +67,17 @@ def main():
             'centroids': centroids,
             'buffer_size': opt_buffer_size,
             'FILENAME_PATTERN': FILENAME_PATTERN,
+            'name_key': opt_name_key,
         },))
+
+    logger.info('Launching batch processor')
     with workers:
-        workers.map(run_batch, run_spec, 10)
+        matrix = workers.imap(run_batch, run_spec)
+        matrix = pd.concat(matrix, ignore_index=True)
+
+    matrix_filename = os.path.join(
+        opt_base_folder, f'MSOAtoMSOATravelTimeMatrix_ToArriveBy_{opt_travel_time.isoformat()}.csv')
+    matrix.to_csv(matrix_filename, index=False)
 
     # Stop OTP Server
     server.stop()

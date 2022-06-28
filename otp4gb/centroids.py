@@ -8,5 +8,5 @@ def load_centroids(path):
     data = pd.read_csv(path)
     geometry = data.apply(
         lambda x: Point([x.Longitude, x.Latitude]), axis=1)
-    data=gpd.GeoDataFrame(data[['msoa11cd', 'msoa11nm']], geometry=geometry.values)
+    data=gpd.GeoDataFrame(data[['msoa11cd', 'msoa11nm']], geometry=geometry.values, crs='EPSG:4326')
     return data
