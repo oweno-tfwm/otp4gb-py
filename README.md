@@ -47,3 +47,19 @@ command line options
 Environment config
 
   `OSMCONVERT_DOCKER` - if set, will use a dockerised version of osmconvert (useful to run on macos, where there appears to be no native osmconvert)
+
+# `process.py`
+
+Having created the OTP directory, the process script runs a batch as defined in the config file.
+
+Usage:
+
+```
+python process.py <directory>
+```
+
+The `<directory>` is the one prepared by the prepare script.
+
+No command line options as yet.
+
+This creates a CSV file of the Travel Time matrix of all included MSOAs. In addition, it has creates travel isochrone GeoJSON files in the `isochrones` subdirectory.

@@ -14,4 +14,16 @@ osm_file: great-britain-latest.osm.pbf
 
 # Specify the list of GTFS files to process
 gtfs_files:
+  - GBRail_GTFS.zip
   - Y_GTFS.zip
+
+# Options affecting the routing
+travel_time: 2019-09-10T08:30:00
+buffer_size: 100
+modes:
+  - BUS,WALK
+  - TRANSIT,WALK
+  - BICYCLE
+  - CAR
+  - WALK
+centroids: MSOACentroids_NorthEngland_LatLong.csv
