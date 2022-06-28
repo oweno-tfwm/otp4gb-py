@@ -1,7 +1,9 @@
 
+import datetime
 import multiprocessing
 import operator
 import os
+import time
 import pandas as pd
 import sys
 from otp4gb.batch import build_run_spec, run_batch, setup_worker
@@ -9,6 +11,7 @@ from otp4gb.centroids import load_centroids
 from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.logging import get_logger
 from otp4gb.otp import Server
+from otp4gb.util import Timer
 
 
 logger = get_logger()
@@ -17,6 +20,7 @@ FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{l
 
 
 def main():
+    _process_timer = Timer()
     try:
         opt_base_folder = os.path.abspath(sys.argv[1])
     except IndexError:
@@ -81,6 +85,8 @@ def main():
 
     # Stop OTP Server
     server.stop()
+
+    logger.info('Calculated %s rows in %s', len(matrix), _process_timer)
 
 
 if __name__ == '__main__':
