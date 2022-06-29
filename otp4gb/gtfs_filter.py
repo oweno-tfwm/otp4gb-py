@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 
-from otp4gb.config import BIN_DIR, GTFS_MAX_HEAP, ASSET_DIR
+from otp4gb.config import BIN_DIR, ASSET_DIR, PREPARE_MAX_HEAP
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def gtfs_filter(timetable_file, output_dir, location_filter, date_filter):
 
     command = [
         'java',
-        '-Xmx{}'.format(GTFS_MAX_HEAP),
+        '-Xmx{}'.format(PREPARE_MAX_HEAP),
         '-jar', jar_file,
         timetable_file,
         '-d', date_filter,

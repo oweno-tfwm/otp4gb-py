@@ -9,8 +9,8 @@ CONF_DIR = os.path.abspath('config')
 ASSET_DIR = os.path.join(ROOT_DIR, 'assets')
 
 # if you're running on a virtual machine (no virtual memory/page disk) this must not exceed the total amount of RAM.
-GTFS_MAX_HEAP = os.environ.get('GTFS_MAX_HEAP', '2G')
-OTP_MAX_HEAP = os.environ.get('OTP_MAX_HEAP', '2G')
+PREPARE_MAX_HEAP = os.environ.get('PREPARE_MAX_HEAP', '20G')
+SERVER_MAX_HEAP = os.environ.get('SERVER_MAX_HEAP', '2G')
 
 
 def load_config(dir):

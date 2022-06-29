@@ -7,7 +7,7 @@ import time
 import urllib.request
 import urllib.parse
 
-from otp4gb.config import BIN_DIR, OTP_MAX_HEAP
+from otp4gb.config import BIN_DIR, PREPARE_MAX_HEAP, SERVER_MAX_HEAP
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +16,13 @@ otp_base = [
     'java',
     '--add-opens', 'java.base/java.util=ALL-UNNAMED',
     '--add-opens', 'java.base/java.io=ALL-UNNAMED',
-    '-Xmx{}'.format(OTP_MAX_HEAP),
     '-jar', otp_jar_file
 ]
 
 
 def prepare_graph(build_dir):
     command = otp_base + [
+        '-Xmx{}'.format(PREPARE_MAX_HEAP),
         "--build", build_dir
     ]
     logger.info('Running OTP build command')
@@ -38,6 +38,7 @@ class Server:
 
     def start(self):
         command = otp_base + [
+            '-Xmx{}'.format(SERVER_MAX_HEAP),
             '--graphs', 'graphs',
             '--router', 'filtered',
             '--port', self.port,
