@@ -83,7 +83,7 @@ def run_batch(batch_args):
                 location_name=name,
                 mode=mode,
                 buffer_size=buffer_size,
-                arrival_time=travel_time.isoformat(),
+                arrival_time=travel_time.strftime('%Y-%m-%d_%H%M'),
                 journey_time=str(journey_time/60).rjust(4, '_'),
             )
         )
