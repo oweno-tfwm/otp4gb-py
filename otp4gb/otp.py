@@ -11,18 +11,19 @@ from otp4gb.config import BIN_DIR, PREPARE_MAX_HEAP, SERVER_MAX_HEAP
 
 logger = logging.getLogger(__name__)
 
-otp_jar_file = os.path.join(BIN_DIR, 'otp-1.5.0-shaded.jar')
-otp_base = [
-    'java',
-    '--add-opens', 'java.base/java.util=ALL-UNNAMED',
-    '--add-opens', 'java.base/java.io=ALL-UNNAMED',
-    '-jar', otp_jar_file
-]
+def _java_command(heap):
+    otp_jar_file = os.path.join(BIN_DIR, 'otp-1.5.0-shaded.jar')
+    return [
+        '-Xmx{}'.format(heap),
+        'java',
+        '--add-opens', 'java.base/java.util=ALL-UNNAMED',
+        '--add-opens', 'java.base/java.io=ALL-UNNAMED',
+        '-jar', otp_jar_file
+    ]
 
 
 def prepare_graph(build_dir):
-    command = otp_base + [
-        '-Xmx{}'.format(PREPARE_MAX_HEAP),
+    command = _java_command(PREPARE_MAX_HEAP) + [
         "--build", build_dir
     ]
     logger.info('Running OTP build command')
@@ -37,8 +38,7 @@ class Server:
         self.process = None
 
     def start(self):
-        command = otp_base + [
-            '-Xmx{}'.format(SERVER_MAX_HEAP),
+        command = _java_command(SERVER_MAX_HEAP) + [
             '--graphs', 'graphs',
             '--router', 'filtered',
             '--port', self.port,
