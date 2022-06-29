@@ -1,5 +1,7 @@
-test/
-OTP4GB-orig/
+# general dumping ground for stuff
+scratch/
+
+# Working directory for building zip files
 zip_tmp/
 
 # Byte-compiled / optimized / DLL files
