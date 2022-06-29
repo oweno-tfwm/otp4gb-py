@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 def _java_command(heap):
     otp_jar_file = os.path.join(BIN_DIR, 'otp-1.5.0-shaded.jar')
     return [
-        '-Xmx{}'.format(heap),
         'java',
+        '-Xmx{}'.format(heap),
         '--add-opens', 'java.base/java.util=ALL-UNNAMED',
         '--add-opens', 'java.base/java.io=ALL-UNNAMED',
         '-jar', otp_jar_file
