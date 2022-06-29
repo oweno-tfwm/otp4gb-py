@@ -1,10 +1,8 @@
 
 import atexit
-import datetime
 import multiprocessing
 import operator
 import os
-import time
 import pandas as pd
 import sys
 from otp4gb.batch import build_run_spec, run_batch, setup_worker
@@ -12,7 +10,7 @@ from otp4gb.centroids import load_centroids
 from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.logging import get_logger
 from otp4gb.otp import Server
-from otp4gb.util import Timer
+from otp4gb.util import Timer, chunker
 
 
 logger = get_logger()
@@ -22,9 +20,12 @@ FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{l
 
 def main():
     _process_timer = Timer()
+    matrix = None
+
+    @atexit.register
     def report_time():
-        logger.info('Execution time was %s', _process_timer)
-    atexit.register(report_time)
+        logger.info('Calculated %s rows of matrix in %s',
+                    len(matrix) if matrix else 0, _process_timer)
 
     try:
         opt_base_folder = os.path.abspath(sys.argv[1])
@@ -65,10 +66,14 @@ def main():
     if not os.path.exists(isochrones_dir):
         os.makedirs(isochrones_dir)
 
-    logger.info('Building run spec')
-    run_spec = build_run_spec(name_key=opt_name_key, modes=opt_modes, centroids=centroids, arrive_by=opt_travel_time,
-                              travel_time_max=opt_max_travel_time, travel_time_step=opt_isochrone_step,
-                              max_walk_distance=opt_max_walk_distance, server=server)
+    jobs = build_run_spec(name_key=opt_name_key, modes=opt_modes, centroids=centroids, arrive_by=opt_travel_time,
+                          travel_time_max=opt_max_travel_time, travel_time_step=opt_isochrone_step,
+                          max_walk_distance=opt_max_walk_distance, server=server)
+
+    matrix_filename = os.path.join(
+        opt_base_folder, f"MSOAtoMSOATravelTimeMatrix_ToArriveBy_{opt_travel_time.strftime('%Y%m%d_%H%M')}.csv"
+    )
+    logger.info('Launching batch processor to process %d jobs', len(jobs))
 
     workers = multiprocessing.Pool(
         processes=opt_num_workers, initializer=setup_worker, initargs=({
@@ -79,20 +84,18 @@ def main():
             'name_key': opt_name_key,
         },))
 
-    logger.info('Launching batch processor')
     with workers:
-        results = workers.imap_unordered(run_batch, run_spec)
-        # Combine result set and write ot output file
-        matrix = pd.concat(results, ignore_index=True)
+        for idx, batch in enumerate(chunker(jobs)):
+            logger.info("Running batch %d", idx+1)
+            results = workers.imap_unordered(run_batch, batch)
 
-    matrix_filename = os.path.join(
-        opt_base_folder, f'MSOAtoMSOATravelTimeMatrix_ToArriveBy_{opt_travel_time.isoformat()}.csv')
-    matrix.to_csv(matrix_filename, index=False)
+            # Combine result set and write ot output file after each batch
+            results = pd.concat(results, ignore_index=True)
+            matrix = pd.concat([matrix, results], ignore_index=True)
+            matrix.to_csv(matrix_filename, index=False)
 
     # Stop OTP Server
     server.stop()
-
-    logger.info('Calculated %s rows in %s', len(matrix), _process_timer)
 
 
 if __name__ == '__main__':
