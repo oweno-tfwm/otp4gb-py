@@ -1,4 +1,5 @@
 
+import atexit
 import datetime
 import multiprocessing
 import operator
@@ -21,6 +22,10 @@ FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{l
 
 def main():
     _process_timer = Timer()
+    def report_time():
+        logger.info('Execution time was %s', _process_timer)
+    atexit.register(report_time)
+
     try:
         opt_base_folder = os.path.abspath(sys.argv[1])
     except IndexError:
