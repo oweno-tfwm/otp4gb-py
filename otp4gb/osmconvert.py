@@ -21,12 +21,12 @@ def _command(input, bounds, output):
             'osmconvert',
         ]
     args = [
+        input,
         '-b={}'.format(bounds),
-        '-o={}'.format(output),
         '--complete-ways',
-        input
+        '-o={}'.format(output),
     ]
-    return ' '.join(command + args)
+    return command + args
 
 
 def osm_convert(input, output, extents):
@@ -36,5 +36,5 @@ def osm_convert(input, output, extents):
 
     expr = _command(input, bounds, output)
     logger.info('Running osmconvert')
-    logger.debug(expr)
-    subprocess.call(expr, shell=True)
+    logger.debug('commandline = %s', ' '.join(expr))
+    subprocess.run(expr, check=True)
