@@ -72,20 +72,20 @@ def run_batch(batch_args):
     origins = centroids.clip(largest)
     origins = origins.assign(travel_time='')
 
+    # Set working directory
+    os.chdir(output_dir)
+
     # Calculate all possible origins within travel time by minutes
     for i in range(data.shape[0]):
         row = data.iloc[[i]]
         journey_time = int(row.time)
         logger.debug('Journey time %s', journey_time)
-        geojson_file = os.path.join(
-            output_dir,
-            FILENAME_PATTERN.format(
-                location_name=name,
-                mode=mode,
-                buffer_size=buffer_size,
-                arrival_time=travel_time.strftime('%Y-%m-%d_%H%M'),
-                journey_time=str(journey_time/60).rjust(4, '_'),
-            )
+        geojson_file = FILENAME_PATTERN.format(
+            location_name=name,
+            mode=mode,
+            buffer_size=buffer_size,
+            arrival_time=travel_time,
+            journey_time=journey_time/60,
         )
         # Write isochrone
         with open(geojson_file, 'w') as f:
@@ -93,8 +93,8 @@ def run_batch(batch_args):
 
         covered_indexes = origins.clip(row).index
         logger.debug('Mode %s for %s covers %s centroids in %s seconds',
-                    mode, name,
-                    len(covered_indexes), int(row.time))
+                     mode, name,
+                     len(covered_indexes), int(row.time))
         updated_times = pd.DataFrame(
             {'travel_time': journey_time}, index=covered_indexes)
         origins.update(updated_times)
