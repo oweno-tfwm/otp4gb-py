@@ -1,5 +1,6 @@
 
 import atexit
+import logging
 import multiprocessing
 import operator
 import os
@@ -8,12 +9,13 @@ import sys
 from otp4gb.batch import build_run_spec, run_batch, setup_worker
 from otp4gb.centroids import load_centroids
 from otp4gb.config import ASSET_DIR, load_config
-from otp4gb.logging import get_logger
+from otp4gb.logging import file_handler_factory, get_logger
 from otp4gb.otp import Server
 from otp4gb.util import Timer, chunker
 
 
 logger = get_logger()
+logger.setLevel(logging.INFO)
 
 FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{location_name}_ToArriveBy_{arrival_time:%Y%m%d_%H%M}_within_{journey_time:_>4n}_mins.geojson"
 
@@ -31,6 +33,8 @@ def main():
         opt_base_folder = os.path.abspath(sys.argv[1])
     except IndexError:
         logger.error('No path provided')
+    log_file = file_handler_factory('process.log', os.path.join(opt_base_folder, 'logs'))
+    logger.addHandler(log_file)
 
     config = load_config(opt_base_folder)
 
@@ -85,8 +89,8 @@ def main():
         },))
 
     with workers:
-        for idx, batch in enumerate(chunker(jobs)):
-            logger.info("Running batch %d", idx+1)
+        for idx, batch in enumerate(chunker(jobs, 20)):
+            logger.info("==================== Running batch %d ====================", idx+1)
             results = workers.imap_unordered(run_batch, batch)
 
             # Combine result set and write ot output file after each batch

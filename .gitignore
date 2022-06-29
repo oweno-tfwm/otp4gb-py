@@ -4,6 +4,9 @@ scratch/
 # Working directory for building zip files
 zip_tmp/
 
+# Log directory
+logs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

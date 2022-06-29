@@ -46,7 +46,7 @@ class Server:
         ]
         logger.info("Starting OTP server")
         logger.debug("About to run server with %s", command)
-        self.process = subprocess.Popen(command, cwd=self.base_dir)
+        self.process = subprocess.Popen(command, cwd=self.base_dir, stdout=subprocess.DEVNULL)
         atexit.register(lambda: self.stop())
         self._check_server()
         logger.info("OTP server started")
