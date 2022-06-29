@@ -76,8 +76,9 @@ def main():
 
     logger.info('Launching batch processor')
     with workers:
-        matrix = workers.imap(run_batch, run_spec)
-        matrix = pd.concat(matrix, ignore_index=True)
+        results = workers.imap_unordered(run_batch, run_spec)
+        # Combine result set and write ot output file
+        matrix = pd.concat(results, ignore_index=True)
 
     matrix_filename = os.path.join(
         opt_base_folder, f'MSOAtoMSOATravelTimeMatrix_ToArriveBy_{opt_travel_time.isoformat()}.csv')
