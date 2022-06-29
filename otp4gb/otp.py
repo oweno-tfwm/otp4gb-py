@@ -27,7 +27,7 @@ def prepare_graph(build_dir):
     ]
     logger.info('Running OTP build command')
     logger.debug(command)
-    subprocess.run(' '.join(command), shell=True)
+    subprocess.run(command, check=True)
 
 
 class Server:
@@ -37,17 +37,15 @@ class Server:
         self.process = None
 
     def start(self):
-        graphs_dir = os.path.join(self.base_dir, 'graphs')
-
         command = otp_base + [
-            '--graphs', graphs_dir,
+            '--graphs', 'graphs',
             '--router', 'filtered',
             '--port', self.port,
             '--server'
         ]
         logger.info("Starting OTP server")
         logger.debug("About to run server with %s", command)
-        self.process = subprocess.Popen(command, cwd=os.getcwd())
+        self.process = subprocess.Popen(command, cwd=self.base_dir)
         atexit.register(lambda: self.stop())
         self._check_server()
         logger.info("OTP server started")
