@@ -27,7 +27,7 @@ def main():
     @atexit.register
     def report_time():
         logger.info('Calculated %s rows of matrix in %s',
-                    len(matrix) if matrix else 0, _process_timer)
+                    len(matrix) if matrix is not None else 0, _process_timer)
 
     try:
         opt_base_folder = os.path.abspath(sys.argv[1])
