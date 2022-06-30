@@ -66,6 +66,7 @@ def main():
 
     # Filter MSOAs by bounding box
     centroids = centroids.clip(opt_clip_box)
+    logger.info('Considering %d centroids', len(centroids))
 
     # Create output directory
     isochrones_dir = os.path.join(opt_base_folder, 'isochrones')
