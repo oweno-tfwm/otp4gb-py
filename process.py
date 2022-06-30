@@ -75,7 +75,8 @@ def main():
                           max_walk_distance=opt_max_walk_distance, server=server)
 
     matrix_filename = os.path.join(
-        opt_base_folder, f"MSOAtoMSOATravelTimeMatrix_ToArriveBy_{opt_travel_time.strftime('%Y%m%d_%H%M')}.csv"
+        opt_base_folder,
+        f"MSOAtoMSOATravelTimeMatrix_ToArriveBy_{opt_travel_time.strftime('%Y%m%d_%H%M')}.csv"
     )
     logger.info('Launching batch processor to process %d jobs', len(jobs))
 
@@ -89,13 +90,19 @@ def main():
         },))
 
     with workers:
-        for idx, batch in enumerate(chunker(jobs, 20)):
+        for idx, batch in enumerate(chunker(jobs, 8)):
             logger.info("==================== Running batch %d ====================", idx+1)
+            logger.info("Dispatching %d jobs", len(batch))
             results = workers.imap_unordered(run_batch, batch)
 
             # Combine result set and write ot output file after each batch
             results = pd.concat(results, ignore_index=True)
-            matrix = pd.concat([matrix, results], ignore_index=True)
+            logger.info("Receiving %d results", len(results))
+            if matrix is None:
+                matrix = results
+            else:
+                matrix = matrix.append(results, ignore_index=True)
+            logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
             matrix.to_csv(matrix_filename, index=False)
 
     # Stop OTP Server
