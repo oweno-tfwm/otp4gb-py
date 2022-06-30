@@ -115,6 +115,9 @@ def run_batch(batch_args):
 
     logger.debug('Travel Matrix ==>\n%s', travel_time_matrix)
 
+    # Convert to native python list
+    travel_time_matrix = travel_time_matrix.to_dict(orient='records')
+
     logger.info('Completing %s for %s', mode, name)
 
     return travel_time_matrix

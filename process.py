@@ -22,18 +22,19 @@ FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{l
 
 def main():
     _process_timer = Timer()
-    matrix = None
+    matrix = []
 
     @atexit.register
     def report_time():
         logger.info('Calculated %s rows of matrix in %s',
-                    len(matrix) if matrix is not None else 0, _process_timer)
+                    len(matrix), _process_timer)
 
     try:
         opt_base_folder = os.path.abspath(sys.argv[1])
     except IndexError:
         logger.error('No path provided')
-    log_file = file_handler_factory('process.log', os.path.join(opt_base_folder, 'logs'))
+    log_file = file_handler_factory(
+        'process.log', os.path.join(opt_base_folder, 'logs'))
     logger.addHandler(log_file)
 
     config = load_config(opt_base_folder)
@@ -50,6 +51,7 @@ def main():
     opt_max_walk_distance = 2500
     opt_no_server = False
     opt_num_workers = 8
+    opt_chunk_size = opt_num_workers * 10
     opt_name_key = 'msoa11nm'
 
     # Start OTP Server
@@ -90,20 +92,23 @@ def main():
         },))
 
     with workers:
-        for idx, batch in enumerate(chunker(jobs, 8)):
-            logger.info("==================== Running batch %d ====================", idx+1)
+        for idx, batch in enumerate(chunker(jobs, opt_chunk_size)):
+            logger.info(
+                "==================== Running batch %d ====================", idx+1)
             logger.info("Dispatching %d jobs", len(batch))
             results = workers.imap_unordered(run_batch, batch)
 
-            # Combine result set and write ot output file after each batch
-            results = pd.concat(results, ignore_index=True)
+            # This is a list comprehension which flattens the results
+            results = [row for result in results for row in result]
             logger.info("Receiving %d results", len(results))
-            if matrix is None:
-                matrix = results
-            else:
-                matrix = matrix.append(results, ignore_index=True)
+
+            # Append to matrix
+            matrix = matrix + results
+
+            # Write list to csv
+            # TODO Check if this is expensive
             logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
-            matrix.to_csv(matrix_filename, index=False)
+            pd.DataFrame.from_dict(matrix).to_csv(matrix_filename, index=False)
 
     # Stop OTP Server
     server.stop()
