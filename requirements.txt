@@ -1,0 +1,6 @@
+python>=3.9
+
+geopandas>=0.11.1
+yaml>=0.2.5
+pyaml>=20.4.0
+geojson-rewind>=1.0.2
