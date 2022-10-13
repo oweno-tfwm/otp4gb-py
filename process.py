@@ -83,33 +83,48 @@ def main():
     )
     logger.info('Launching batch processor to process %d jobs', len(jobs))
 
-    workers = multiprocessing.Pool(
-        processes=opt_num_workers, initializer=setup_worker, initargs=({
-            'output_dir': isochrones_dir,
-            'centroids': centroids,
-            'buffer_size': opt_buffer_size,
-            'FILENAME_PATTERN': FILENAME_PATTERN,
-            'name_key': opt_name_key,
-        },))
+    
+    config_dict = {
+        'output_dir': isochrones_dir,
+        'centroids': centroids,
+        'buffer_size': opt_buffer_size,
+        'FILENAME_PATTERN': FILENAME_PATTERN,
+        'name_key': opt_name_key,
+    }
+    
+    # TODO(MB) Set this as a parameter
+    run_multiprocessing = False
+    if run_multiprocessing:
+        workers = multiprocessing.Pool(
+            processes=opt_num_workers, initializer=setup_worker, initargs=(config_dict,)
+        )
 
-    with workers:
-        for idx, batch in enumerate(chunker(jobs, opt_chunk_size)):
-            logger.info(
-                "==================== Running batch %d ====================", idx+1)
-            logger.info("Dispatching %d jobs", len(batch))
-            results = workers.imap_unordered(run_batch, batch)
+        with workers:
+            for idx, batch in enumerate(chunker(jobs, opt_chunk_size)):
+                logger.info(
+                    "==================== Running batch %d ====================", idx+1)
+                logger.info("Dispatching %d jobs", len(batch))
+                results = workers.imap_unordered(run_batch, batch)
 
-            # This is a list comprehension which flattens the results
-            results = [row for result in results for row in result]
-            logger.info("Receiving %d results", len(results))
+                # This is a list comprehension which flattens the results
+                results = [row for result in results for row in result]
+                logger.info("Receiving %d results", len(results))
 
-            # Append to matrix
-            matrix = matrix + results
+                # Append to matrix
+                matrix = matrix + results
 
-            # Write list to csv
-            # TODO Check if this is expensive
-            logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
-            pd.DataFrame.from_dict(matrix).to_csv(matrix_filename, index=False)
+                # Write list to csv
+                # TODO Check if this is expensive
+                logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
+                pd.DataFrame.from_dict(matrix).to_csv(matrix_filename, index=False)
+    else:
+        setup_worker(config_dict)
+        matrix = [run_batch(j) for j in jobs]
+
+        # Write list to csv
+        logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
+        pd.DataFrame.from_dict(matrix).to_csv(matrix_filename, index=False)
+
 
     # Stop OTP Server
     server.stop()
