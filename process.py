@@ -1,12 +1,13 @@
 
 import atexit
+import itertools
 import logging
 import multiprocessing
 import operator
 import os
 import pandas as pd
 import sys
-from otp4gb.batch import build_run_spec, run_batch, setup_worker
+from otp4gb.batch import build_run_spec, run_batch, setup_worker, run_batch_catch_errors
 from otp4gb.centroids import load_centroids
 from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.logging import file_handler_factory, get_logger
@@ -119,7 +120,9 @@ def main():
                 pd.DataFrame.from_dict(matrix).to_csv(matrix_filename, index=False)
     else:
         setup_worker(config_dict)
-        matrix = [run_batch(j) for j in jobs]
+        matrix = [run_batch_catch_errors(j) for j in jobs]
+        # Flatten into list of dictionaries
+        matrix = list(itertools.chain.from_iterable(matrix))
 
         # Write list to csv
         logger.info("Writing %d rows to %s", len(matrix), matrix_filename)

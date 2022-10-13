@@ -121,3 +121,19 @@ def run_batch(batch_args):
     logger.info('Completing %s for %s', mode, name)
 
     return travel_time_matrix
+
+
+def run_batch_catch_errors(batch_args: dict) -> list[dict]:
+    """Wraps `run_batch` catches any exceptions and returns dict of arguments and error."""
+    try:
+        return run_batch(batch_args)
+    except Exception as e:
+        # Get destination name instead of whole Series
+        args = batch_args.copy()
+        dest_name = args.pop("destination").loc["msoa11nm"]
+        args["destination"] = dest_name
+
+        err_msg =  f"{e.__class__.__name__}: {e}"
+        logger.error("Error in run_batch(%s) - %s", args, err_msg)
+
+        return [{**args, "error": err_msg}]
