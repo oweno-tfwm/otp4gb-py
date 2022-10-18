@@ -27,3 +27,4 @@ modes:
   - CAR
   - WALK
 centroids: MSOACentroids_NorthEngland_LatLong.csv
+run_multiprocessing: false

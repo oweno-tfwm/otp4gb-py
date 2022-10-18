@@ -93,8 +93,7 @@ def main():
         'name_key': opt_name_key,
     }
     
-    # TODO(MB) Set this as a parameter
-    run_multiprocessing = False
+    run_multiprocessing = config.get("run_multiprocessing", False)
     if run_multiprocessing:
         workers = multiprocessing.Pool(
             processes=opt_num_workers, initializer=setup_worker, initargs=(config_dict,)
@@ -105,7 +104,7 @@ def main():
                 logger.info(
                     "==================== Running batch %d ====================", idx+1)
                 logger.info("Dispatching %d jobs", len(batch))
-                results = workers.imap_unordered(run_batch, batch)
+                results = workers.imap_unordered(run_batch_catch_errors, batch)
 
                 # This is a list comprehension which flattens the results
                 results = [row for result in results for row in result]
