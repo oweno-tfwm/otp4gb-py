@@ -45,6 +45,6 @@ def gtfs_filter(timetable_file, output_dir, location_filter, date_filter):
     ]
 
     logger.debug(command)
-    subprocess.run(' '.join(command), shell=True)
+    subprocess.run(command, shell=True)
     shutil.make_archive(output_file, 'zip', temp_folder)
     shutil.rmtree(temp_folder)
