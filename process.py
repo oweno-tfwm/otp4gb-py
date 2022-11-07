@@ -23,12 +23,10 @@ FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{l
 
 def main():
     _process_timer = Timer()
-    matrix = []
 
     @atexit.register
     def report_time():
-        logger.info('Calculated %s rows of matrix in %s',
-                    len(matrix), _process_timer)
+        logger.info('Finished in %s', _process_timer)
 
     try:
         opt_base_folder = os.path.abspath(sys.argv[1])
@@ -110,13 +108,13 @@ def main():
                 results = [row for result in results for row in result]
                 logger.info("Receiving %d results", len(results))
 
-                # Append to matrix
-                matrix = matrix + results
-
                 # Write list to csv
-                # TODO Check if this is expensive
+                matrix = pd.DataFrame.from_dict(results)
                 logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
-                pd.DataFrame.from_dict(matrix).to_csv(matrix_filename, index=False)
+                if idx == 0:
+                    matrix.to_csv(matrix_filename, index=False)
+                else:
+                    matrix.to_csv(matrix_filename, index=False, mode="a", header=False)
     else:
         setup_worker(config_dict)
         matrix = [run_batch_catch_errors(j) for j in jobs]
