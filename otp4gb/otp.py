@@ -10,9 +10,10 @@ import urllib.parse
 from otp4gb.config import BIN_DIR, PREPARE_MAX_HEAP, SERVER_MAX_HEAP
 
 logger = logging.getLogger(__name__)
+OTP_VERSION = "2.1.0"
 
 def _java_command(heap):
-    otp_jar_file = os.path.join(BIN_DIR, 'otp-1.5.0-shaded.jar')
+    otp_jar_file = os.path.join(BIN_DIR, f"otp-{OTP_VERSION}-shaded.jar")
     return [
         'java',
         '-Xmx{}'.format(heap),
@@ -24,7 +25,7 @@ def _java_command(heap):
 
 def prepare_graph(build_dir):
     command = _java_command(PREPARE_MAX_HEAP) + [
-        "--build", build_dir
+        "--build", build_dir, "--save"
     ]
     logger.info('Running OTP build command')
     logger.debug(command)
@@ -39,10 +40,8 @@ class Server:
 
     def start(self):
         command = _java_command(SERVER_MAX_HEAP) + [
-            '--graphs', 'graphs',
-            '--router', 'filtered',
+            r"graphs\filtered", "--load",
             '--port', self.port,
-            '--server'
         ]
         logger.info("Starting OTP server")
         logger.debug("About to run server with %s", command)
@@ -52,7 +51,7 @@ class Server:
         logger.info("OTP server started")
 
     def _check_server(self):
-        TIMEOUT = 10
+        TIMEOUT = 30
         MAX_RETRIES = 10
         server_up = False
         retries = 0

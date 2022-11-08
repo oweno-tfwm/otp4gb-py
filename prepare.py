@@ -8,7 +8,7 @@ from otp4gb.gtfs_filter import filter_gtfs_files
 from yaml import safe_load
 
 from otp4gb.osmconvert import osm_convert
-from otp4gb.config import ASSET_DIR, CONF_DIR, load_config
+from otp4gb.config import ASSET_DIR, CONF_DIR, load_config, write_build_config
 from otp4gb.otp import prepare_graph
 
 logging.basicConfig(level=logging.DEBUG)
@@ -126,8 +126,7 @@ def main():
                     extents=extents,
                     )
 
-        shutil.copy(os.path.join(CONF_DIR, 'build-config.json'),
-                    filtered_graph_folder)
+        write_build_config(filtered_graph_folder, opt_date)
         shutil.copy(os.path.join(CONF_DIR, 'router-config.json'),
                     filtered_graph_folder)
 
