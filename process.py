@@ -5,14 +5,17 @@ import logging
 import multiprocessing
 import operator
 import os
+import pathlib
 import pandas as pd
 import sys
+
 from otp4gb.batch import build_run_spec, run_batch, setup_worker, run_batch_catch_errors
 from otp4gb.centroids import load_centroids
 from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.logging import file_handler_factory, get_logger
 from otp4gb.otp import Server
 from otp4gb.util import Timer, chunker
+from otp4gb import cost
 
 
 logger = get_logger()
@@ -49,9 +52,10 @@ def main():
     opt_max_travel_time = 90
     opt_max_walk_distance = 2500
     opt_no_server = False
-    opt_num_workers = 8
-    opt_chunk_size = opt_num_workers * 10
+    opt_num_workers = os.cpu_count() // 2
+    opt_chunk_size = opt_num_workers * 100
     opt_name_key = 'msoa11nm'
+    run_multiprocessing = config.get("run_multiprocessing", False)
 
     # Start OTP Server
     server = Server(opt_base_folder)
@@ -66,6 +70,37 @@ def main():
     # Filter MSOAs by bounding box
     centroids = centroids.clip(opt_clip_box)
     logger.info('Considering %d centroids', len(centroids))
+
+    # Build cost matrix
+    if not run_multiprocessing:
+        opt_num_workers = 0
+    
+    for mode in opt_modes:
+        mode = [m.upper().strip() for m in mode.split(",")]
+        cost_settings = cost.CostSettings(
+            server_url="http://localhost:8080",
+            modes=mode,
+            datetime=opt_travel_time,
+            arrive_by=True,
+            max_walk_distance=opt_max_walk_distance,
+        )
+
+        matrix_path = (
+            pathlib.Path(opt_base_folder)
+            / f"costs/{'_'.join(mode)}_costs_{opt_travel_time:%Y%m%dT%H%M}.csv"
+        )
+        matrix_path.parent.mkdir(exist_ok=True)
+
+        cost.build_cost_matrix(
+            centroids,
+            opt_name_key,
+            cost_settings,
+            matrix_path,
+            opt_num_workers,
+            opt_chunk_size,
+        )
+
+    raise SystemExit()
 
     # Create output directory
     isochrones_dir = os.path.join(opt_base_folder, 'isochrones')
@@ -91,7 +126,6 @@ def main():
         'name_key': opt_name_key,
     }
     
-    run_multiprocessing = config.get("run_multiprocessing", False)
     if run_multiprocessing:
         workers = multiprocessing.Pool(
             processes=opt_num_workers, initializer=setup_worker, initargs=(config_dict,)
