@@ -137,7 +137,7 @@ class RoutePlanError(pydantic.BaseModel):
 
 class RoutePlanResults(pydantic.BaseModel):
     requestParameters: RoutePlanParameters
-    plan: Plan
+    plan: Optional[Plan] = None
     error: Optional[RoutePlanError] = None
     debugOutput: Optional[dict] = None
     elevationMetadata: Optional[dict] = None
