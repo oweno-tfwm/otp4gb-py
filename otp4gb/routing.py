@@ -129,6 +129,9 @@ class Plan(pydantic.BaseModel):
     to: Place
     itineraries: list[Itinerary]
 
+    class Config:
+        allow_population_by_field_name = True
+
 class RoutePlanError(pydantic.BaseModel):
     id: int
     msg: str
