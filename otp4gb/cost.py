@@ -21,7 +21,7 @@ import pydantic
 import tqdm
 
 # Local imports
-from otp4gb import routing, util
+from otp4gb import routing, util, centroids
 
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
@@ -63,7 +63,9 @@ class CostResults(pydantic.BaseModel):
 
 ##### FUNCTIONS #####
 def build_calculation_parameters(
-    zone_centroids: gpd.GeoDataFrame, zone_column: str, settings: CostSettings
+    zone_centroids: gpd.GeoDataFrame,
+    centroids_columns: centroids.ZoneCentroidColumns,
+    settings: CostSettings,
 ) -> list[CalculationParameters]:
     """Build a list of parameters for running `calculate_costs`.
 
@@ -71,8 +73,8 @@ def build_calculation_parameters(
     ----------
     zone_centroids : gpd.GeoDataFrame
         Positions of zones to calculate costs between.
-    zone_column : str
-        Name of the column containing the zone ID.
+    centroids_columns : centroids.ZoneCentroidColumns
+        Names of the columns in `zone_centroids`.
     settings : CostSettings
         Additional settings for calculating the costs.
 
@@ -81,8 +83,20 @@ def build_calculation_parameters(
     list[CalculationParameters]
         Parameters to run `calculate_costs`.
     """
+
+    def row_to_place(row: pd.Series) -> routing.Place:
+        return routing.Place(
+            name=row[centroids_columns.name],
+            id=row.name,
+            zone_system=row[centroids_columns.system],
+            lon=row["geometry"].y,
+            lat=row["geometry"].x,
+        )
+
     LOG.info("Building cost calculation parameters")
-    zone_centroids = zone_centroids.set_index(zone_column)["geometry"]
+    zone_centroids = zone_centroids.set_index(centroids_columns.id)[
+        [centroids_columns.name, centroids_columns.system, "geometry"]
+    ]
 
     params = []
     for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
@@ -91,12 +105,8 @@ def build_calculation_parameters(
                 server_url=settings.server_url,
                 modes=settings.modes,
                 datetime=settings.datetime,
-                origin=routing.Place(
-                    name=o, lon=zone_centroids.loc[o].y, lat=zone_centroids.loc[o].x
-                ),
-                destination=routing.Place(
-                    name=d, lon=zone_centroids.loc[d].y, lat=zone_centroids.loc[d].x
-                ),
+                origin=row_to_place(zone_centroids.loc[o]),
+                destination=row_to_place(zone_centroids.loc[d]),
                 arrive_by=settings.arrive_by,
                 wheelchair=settings.wheelchair,
                 max_walk_distance=settings.max_walk_distance,
@@ -193,7 +203,7 @@ def _matrix_costs(result: CostResults) -> dict:
 
 def build_cost_matrix(
     zone_centroids: gpd.GeoDataFrame,
-    zone_column: str,
+    centroids_columns: centroids.ZoneCentroidColumns,
     settings: CostSettings,
     matrix_file: pathlib.Path,
     workers: int = 0,
@@ -204,8 +214,8 @@ def build_cost_matrix(
     ----------
     zone_centroids : gpd.GeoDataFrame
         Zones for the cost matrix.
-    zone_column : str
-        Name of the column containing the zone ID.
+    centroids_columns : centroids.ZoneCentroidColumns
+        Names of the columns in `zone_centroids`.
     settings : CostSettings
         Settings for calculating the costs.
     matrix_file : pathlib.Path
@@ -214,7 +224,7 @@ def build_cost_matrix(
         Number of threads to create during calculations.
     """
     LOG.info("Calculating costs for %s with settings\n%s", matrix_file.name, settings)
-    jobs = build_calculation_parameters(zone_centroids, zone_column, settings)
+    jobs = build_calculation_parameters(zone_centroids, centroids_columns, settings)
 
     lock = threading.Lock()
     response_file = matrix_file.with_name(matrix_file.name + "-response_data.jsonl")

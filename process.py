@@ -8,7 +8,7 @@ import pathlib
 import pandas as pd
 import sys
 
-from otp4gb.centroids import load_centroids
+from otp4gb.centroids import load_centroids, ZoneCentroidColumns
 from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.logging import file_handler_factory, get_logger
 from otp4gb.otp import Server
@@ -38,6 +38,7 @@ def main():
     )
     logger.addHandler(log_file)
 
+    # TODO(MB) Use BaseConfig class from NorMITs-Demand
     config = load_config(opt_base_folder)
 
     opt_travel_time = config.get("travel_time")
@@ -50,7 +51,6 @@ def main():
     opt_max_walk_distance = 2500
     opt_no_server = False
     opt_num_workers = config.get("number_of_threads", 0)
-    opt_name_key = "msoa11nm"
 
     # Start OTP Server
     server = Server(opt_base_folder)
@@ -60,7 +60,9 @@ def main():
 
     # Load Northern MSOAs
     logger.info("Loading centroids")
-    centroids = load_centroids(opt_centroids_path)
+    # TODO(MB) Read parameters for config to define column names
+    centroids_columns = ZoneCentroidColumns()
+    centroids = load_centroids(opt_centroids_path, zone_columns=centroids_columns)
 
     # Filter MSOAs by bounding box
     centroids = centroids.clip(opt_clip_box)
@@ -85,7 +87,7 @@ def main():
 
         cost.build_cost_matrix(
             centroids,
-            opt_name_key,
+            centroids_columns,
             cost_settings,
             matrix_path,
             opt_num_workers,

@@ -102,6 +102,8 @@ class RoutePlanParameters(pydantic.BaseModel):
 
 class Place(pydantic.BaseModel):
     name: str
+    id: str
+    zone_system: str
     lon: float
     lat: float
 
