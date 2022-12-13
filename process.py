@@ -1,12 +1,11 @@
 import atexit
-import itertools
 import logging
-import multiprocessing
 import operator
 import os
 import pathlib
-import pandas as pd
 import sys
+
+from shapely import geometry
 
 from otp4gb.centroids import load_centroids, ZoneCentroidColumns
 from otp4gb.config import ASSET_DIR, load_config
@@ -65,7 +64,8 @@ def main():
     centroids = load_centroids(opt_centroids_path, zone_columns=centroids_columns)
 
     # Filter MSOAs by bounding box
-    centroids = centroids.clip(opt_clip_box)
+    clip_box = geometry.box(*opt_clip_box)
+    centroids = centroids.clip(clip_box)
     logger.info("Considering %d centroids", len(centroids))
 
     # Build cost matrix
