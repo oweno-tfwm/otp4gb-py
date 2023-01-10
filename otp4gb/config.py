@@ -1,11 +1,17 @@
+"""Functionality for handling the YAML config file."""
+from __future__ import annotations
+
 import datetime
 import json
 import logging
 import os
 import pathlib
 import sys
+from typing import NamedTuple
 
-from yaml import safe_load
+import pydantic
+
+from otp4gb.config_base import BaseConfig
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(sys.argv[0]))
@@ -20,10 +26,61 @@ SERVER_MAX_HEAP = os.environ.get("SERVER_MAX_HEAP", "20G")
 LOG = logging.getLogger(__name__)
 
 
-def load_config(dir):
-    with open(os.path.join(dir, "config.yml")) as conf_file:
-        config = safe_load(conf_file)
-    return config
+class Bounds(NamedTuple):
+    """Bounding box."""
+
+    min_lat: float
+    min_lon: float
+    max_lat: float
+    max_lon: float
+
+    @classmethod
+    def from_dict(cls, data: dict[str, float]) -> Bounds:
+        values = []
+        missing = []
+        invalid = []
+        for nm in cls._fields:
+            if nm not in data:
+                missing.append(nm)
+            else:
+                try:
+                    values.append(float(data[nm]))
+                except ValueError:
+                    invalid.append(str(data[nm]))
+
+        if missing:
+            raise ValueError(f"missing values: {', '.join(missing)}")
+        if invalid:
+            raise TypeError(f"invalid values: {', '.join(invalid)}")
+
+        return cls(*values)
+
+
+class ProcessConfig(BaseConfig):
+    """Class for managing (and parsing) the YAML config file."""
+
+    date: datetime.date
+    extents: Bounds
+    osm_file: str
+    gtfs_files: list[str]
+    travel_time: datetime.datetime
+    modes: list[str]
+    centroids: str
+    max_walk_distance: int = 2500
+    number_of_threads: int = 0
+    no_server: bool = False
+
+    # Makes a classmethod not recognised by pylint, hence disabling self check
+    @pydantic.validator("extents", pre=True)
+    def _extents(cls, value):  # pylint: disable=no-self-argument
+        if not isinstance(value, dict):
+            return value
+        return Bounds.from_dict(value)
+
+
+def load_config(folder: pathlib.Path) -> ProcessConfig:
+    file = pathlib.Path(folder) / "config.yml"
+    return ProcessConfig.load_yaml(file)
 
 
 def write_build_config(folder: pathlib.Path, date: datetime.date) -> None:

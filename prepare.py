@@ -4,20 +4,24 @@ import logging
 import os
 import shutil
 import sys
-from otp4gb.gtfs_filter import filter_gtfs_files
 from yaml import safe_load
 
+from otp4gb.gtfs_filter import filter_gtfs_files
 from otp4gb.osmconvert import osm_convert
-from otp4gb.config import ASSET_DIR, CONF_DIR, load_config, write_build_config
+from otp4gb.config import ASSET_DIR, CONF_DIR, load_config, write_build_config, Bounds
 from otp4gb.otp import prepare_graph
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
 
-def load_bounds():
+def load_bounds() -> dict[str, Bounds]:
     with open(os.path.join("otp4gb", "bounds.yml")) as bounds_file:
         bounds = safe_load(bounds_file)
+
+    for nm, values in bounds.items():
+        bounds[nm] = Bounds.from_dict(values)
+
     return bounds
 
 
@@ -59,8 +63,8 @@ def main():
         exit(1)
 
     opt_force = False
-    opt_date = config.get("date")
-    extents = config.get("extents")
+    opt_date = config.date
+    extents = config.extents
     for o, a in opts:
         if o == "-b" or o == "--bounds":
             try:
@@ -115,7 +119,7 @@ def main():
         # see https://github.com/odileeds/ATOCCIF2GTFS for timetable files
         # These need to reside in base_folder/input/gtfs
         filter_gtfs_files(
-            config.get("gtfs_files"),
+            config.gtfs_files,
             output_dir=filtered_graph_folder,
             date=date_filter_string,
             extents=extents,
@@ -124,7 +128,7 @@ def main():
         # Crop the osm.pbf map of GB to the bounding box
         # If you are not using Windows a version of osmconvert on your platform may be available via https://wiki.openstreetmap.org/wiki/Osmconvert
         osm_convert(
-            os.path.join(ASSET_DIR, config.get("osm_file")),
+            os.path.join(ASSET_DIR, config.osm_file),
             os.path.join(filtered_graph_folder, "gbfiltered.pbf"),
             extents=extents,
         )

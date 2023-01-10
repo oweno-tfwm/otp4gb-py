@@ -1,6 +1,5 @@
 import atexit
 import logging
-import operator
 import os
 import pathlib
 import sys
@@ -18,7 +17,11 @@ from otp4gb import cost
 logger = get_logger()
 logger.setLevel(logging.INFO)
 
-FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{location_name}_ToArriveBy_{arrival_time:%Y%m%d_%H%M}_within_{journey_time:_>4n}_mins.geojson"
+FILENAME_PATTERN = (
+    "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_"
+    "{location_name}_ToArriveBy_{arrival_time:%Y%m%d_%H%M}_"
+    "within_{journey_time:_>4n}_mins.geojson"
+)
 
 
 def main():
@@ -37,23 +40,13 @@ def main():
     )
     logger.addHandler(log_file)
 
-    # TODO(MB) Use BaseConfig class from NorMITs-Demand
     config = load_config(opt_base_folder)
 
-    opt_travel_time = config.get("travel_time")
-    opt_modes = config.get("modes")
-    opt_centroids_path = os.path.join(ASSET_DIR, config.get("centroids"))
-    opt_clip_box = operator.itemgetter("min_lon", "min_lat", "max_lon", "max_lat")(
-        config.get("extents")
-    )
-
-    opt_max_walk_distance = 2500
-    opt_no_server = False
-    opt_num_workers = config.get("number_of_threads", 0)
+    opt_centroids_path = os.path.join(ASSET_DIR, config.centroids)
 
     # Start OTP Server
     server = Server(opt_base_folder)
-    if not opt_no_server:
+    if not config.no_server:
         logger.info("Starting server")
         server.start()
 
@@ -64,24 +57,29 @@ def main():
     centroids = load_centroids(opt_centroids_path, zone_columns=centroids_columns)
 
     # Filter MSOAs by bounding box
-    clip_box = geometry.box(*opt_clip_box)
+    clip_box = geometry.box(
+        config.extents.min_lon,
+        config.extents.min_lat,
+        config.extents.max_lon,
+        config.extents.max_lat,
+    )
     centroids = centroids.clip(clip_box)
     logger.info("Considering %d centroids", len(centroids))
 
     # Build cost matrix
-    for mode in opt_modes:
+    for mode in config.modes:
         mode = [m.upper().strip() for m in mode.split(",")]
         cost_settings = cost.CostSettings(
             server_url="http://localhost:8080",
             modes=mode,
-            datetime=opt_travel_time,
+            datetime=config.travel_time,
             arrive_by=True,
-            max_walk_distance=opt_max_walk_distance,
+            max_walk_distance=config.max_walk_distance,
         )
 
         matrix_path = (
             pathlib.Path(opt_base_folder)
-            / f"costs/{'_'.join(mode)}_costs_{opt_travel_time:%Y%m%dT%H%M}.csv"
+            / f"costs/{'_'.join(mode)}_costs_{config.travel_time:%Y%m%dT%H%M}.csv"
         )
         matrix_path.parent.mkdir(exist_ok=True)
 
@@ -90,7 +88,7 @@ def main():
             centroids_columns,
             cost_settings,
             matrix_path,
-            opt_num_workers,
+            config.number_of_threads,
         )
 
     # Stop OTP Server

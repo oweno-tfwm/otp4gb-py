@@ -1,22 +1,21 @@
 import logging
-import operator
 import os
 import shutil
 import subprocess
 
-from otp4gb.config import BIN_DIR, ASSET_DIR, PREPARE_MAX_HEAP
+from otp4gb.config import BIN_DIR, ASSET_DIR, PREPARE_MAX_HEAP, Bounds
 
 logger = logging.getLogger(__name__)
 
 
-def filter_gtfs_files(gtfs_files, output_dir, date=None, extents=None):
-    location = ":".join(
-        [
-            str(x)
-            for x in operator.itemgetter("min_lat", "min_lon", "max_lat", "max_lon")(
-                extents
-            )
-        ]
+def filter_gtfs_files(
+    gtfs_files: list[str],
+    output_dir: os.PathLike,
+    date: str,
+    extents: Bounds,
+):
+    location = (
+        f"{extents.min_lat}:{extents.min_lon}:{extents.max_lat}:{extents.max_lon}"
     )
     logger.debug(location)
 
@@ -31,7 +30,12 @@ def filter_gtfs_files(gtfs_files, output_dir, date=None, extents=None):
         )
 
 
-def gtfs_filter(timetable_file, output_dir, location_filter, date_filter):
+def gtfs_filter(
+    timetable_file: os.PathLike,
+    output_dir: os.PathLike,
+    location_filter: str,
+    date_filter: str,
+):
     logger.debug(timetable_file)
     temp_folder = "zip_tmp"
     jar_file = os.path.join(BIN_DIR, "gtfs-filter-0.1.jar")
