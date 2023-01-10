@@ -8,3 +8,9 @@ pydantic>=1.10
 requests>=2.28
 shapely>=1.8
 tqdm>=4.63
+
+# Dev dependancies
+black
+pylint
+pydocstyle
+mypy
