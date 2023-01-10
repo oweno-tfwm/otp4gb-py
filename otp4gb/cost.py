@@ -163,6 +163,8 @@ def calculate_costs(
     return _matrix_costs(cost_res)
 
 
+# TODO(MB) Additional parameter for generalised cost calculation parameters
+# and return generalised cost as a separate float
 def _matrix_costs(result: CostResults) -> dict:
     matrix_values = {
         "origin": result.origin.name,
@@ -250,6 +252,26 @@ def build_cost_matrix(
     LOG.info("Written cost matrix %s", matrix_file)
 
 
-def cost_matrix_from_responses():
-    # TODO Read responses jsonl file and build cost matrix without starting a new OTP server
-    raise NotImplementedError("WIP: cost_matrix_from_responses")
+def cost_matrix_from_responses(
+    responses_file: pathlib.Path, matrix_file: pathlib.Path
+) -> None:
+    """Create cost matrix CSV from responses JSON lines file.
+
+    Parameters
+    ----------
+    responses_file : pathlib.Path
+        Path to JSON lines file containing `CostResults`.
+    matrix_file : pathlib.Path
+        Path to CSV file to output cost metrics to.
+    """
+    matrix_data = []
+    with open(responses_file, "rt") as responses:
+        for line in tqdm.tqdm(
+            responses, desc="Calculating cost matrix", dynamic_ncols=True
+        ):
+            results = CostResults.parse_raw(line)
+            matrix_data.append(_matrix_costs(results))
+
+    matrix = pd.DataFrame(matrix_data)
+    matrix.to_csv(matrix_file, index=False)
+    LOG.info("Written cost matrix to %s", matrix_file)
