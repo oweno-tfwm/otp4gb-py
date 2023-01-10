@@ -107,6 +107,7 @@ class Place(pydantic.BaseModel):
     lon: float
     lat: float
 
+
 class Itinerary(pydantic.BaseModel):
     duration: int
     startTime: datetime.datetime
@@ -134,11 +135,13 @@ class Plan(pydantic.BaseModel):
     class Config:
         allow_population_by_field_name = True
 
+
 class RoutePlanError(pydantic.BaseModel):
     id: int
     msg: str
     message: str
     missing: Optional[list[str]] = None
+
 
 class RoutePlanResults(pydantic.BaseModel):
     requestParameters: RoutePlanParameters
