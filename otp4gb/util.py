@@ -100,4 +100,9 @@ def multithread_function(
             futures = [executor.submit(func, a, **shared_kwargs) for a in args]
 
             for r in concurrent.futures.as_completed(futures):
-                yield r.result()
+                try:
+                    result = r.result()
+                    yield result
+                except Exception:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
