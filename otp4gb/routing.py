@@ -2,8 +2,11 @@
 """Module to send requests to the OTP routing API."""
 
 ##### IMPORTS #####
+from __future__ import annotations
+
 # Standard imports
 import datetime
+import enum
 import logging
 import re
 from typing import Any, Optional, Union
@@ -20,6 +23,19 @@ LOG = logging.getLogger(__name__)
 ROUTER_API_ROUTE = "otp/routers/default/plan"
 
 ##### CLASSES #####
+class Mode(enum.StrEnum):
+    TRANSIT = "TRANSIT"
+    BUS = "BUS"
+    RAIL = "RAIL"
+    TRAM = "TRAM"
+    WALK = "WALK"
+    BICYCLE = "BICYCLE"
+
+    @staticmethod
+    def transit_modes() -> set[Mode]:
+        return {Mode.TRANSIT, Mode.BUS, Mode.RAIL, Mode.TRAM}
+
+
 class RoutePlanParameters(pydantic.BaseModel):
     fromPlace: geometry.Point
     toPlace: geometry.Point
@@ -108,6 +124,18 @@ class Place(pydantic.BaseModel):
     lat: float
 
 
+class Leg(pydantic.BaseModel):
+    startTime: datetime.datetime
+    endTime: datetime.datetime
+    distance: float
+    mode: Mode
+    transitLeg: bool
+    duration: int
+
+    class Config:
+        extra = pydantic.Extra.allow
+
+
 class Itinerary(pydantic.BaseModel):
     duration: int
     startTime: datetime.datetime
@@ -117,13 +145,17 @@ class Itinerary(pydantic.BaseModel):
     waitingTime: int
     walkDistance: float
     walkLimitExceeded: bool
-    generalizedCost: int
+    otp_generalised_cost: int = pydantic.Field(alias="generalizedCost")
     elevationLost: int
     elevationGained: int
     transfers: int
-    legs: list
+    legs: list[Leg]
     tooSloped: bool
+    generalised_cost: Optional[float] = None
     # arrivedAtDestinationWithRentedBicycle: bool
+
+    class Config:
+        allow_population_by_field_name = True
 
 
 class Plan(pydantic.BaseModel):

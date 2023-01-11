@@ -67,11 +67,10 @@ def main():
     logger.info("Considering %d centroids", len(centroids))
 
     # Build cost matrix
-    for mode in config.modes:
-        mode = [m.upper().strip() for m in mode.split(",")]
+    for modes in config.modes:
         cost_settings = cost.CostSettings(
             server_url="http://localhost:8080",
-            modes=mode,
+            modes=modes,
             datetime=config.travel_time,
             arrive_by=True,
             max_walk_distance=config.max_walk_distance,
@@ -79,7 +78,7 @@ def main():
 
         matrix_path = (
             pathlib.Path(opt_base_folder)
-            / f"costs/{'_'.join(mode)}_costs_{config.travel_time:%Y%m%dT%H%M}.csv"
+            / f"costs/{'_'.join(modes)}_costs_{config.travel_time:%Y%m%dT%H%M}.csv"
         )
         matrix_path.parent.mkdir(exist_ok=True)
 
@@ -88,6 +87,8 @@ def main():
             centroids_columns,
             cost_settings,
             matrix_path,
+            config.generalised_cost_factors,
+            config.iterinary_aggregation_method,
             config.number_of_threads,
         )
 

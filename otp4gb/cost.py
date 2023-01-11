@@ -6,6 +6,7 @@
 ##### IMPORTS #####
 # Standard imports
 import datetime
+import enum
 import io
 import itertools
 import logging
@@ -31,7 +32,7 @@ class CostSettings(NamedTuple):
     """Settings for the OTP routing."""
 
     server_url: str
-    modes: list[str]
+    modes: list[routing.Mode]
     datetime: datetime.datetime
     arrive_by: bool = False
     wheelchair: bool = False
@@ -59,6 +60,24 @@ class CostResults(pydantic.BaseModel):
     plan: Optional[routing.Plan]
     error: Optional[routing.RoutePlanError]
     request_url: str
+
+
+class AggregationMethod(enum.StrEnum):
+    """Method to use when aggregating itineraries."""
+
+    MEAN = enum.auto()
+    MEDIAN = enum.auto()
+
+
+class GeneralisedCostFactors(pydantic.BaseModel):
+    """Parameters for calculating the generalised cost."""
+
+    wait_time: float
+    transfer_number: float
+    walk_time: float
+    transit_time: float
+    walk_distance: float
+    transit_distance: float
 
 
 ##### FUNCTIONS #####
@@ -103,7 +122,7 @@ def build_calculation_parameters(
         params.append(
             CalculationParameters(
                 server_url=settings.server_url,
-                modes=settings.modes,
+                modes=[str(m) for m in settings.modes],
                 datetime=settings.datetime,
                 origin=row_to_place(zone_centroids.loc[o]),
                 destination=row_to_place(zone_centroids.loc[d]),
@@ -120,6 +139,7 @@ def calculate_costs(
     parameters: CalculationParameters,
     response_file: io.TextIOWrapper,
     lock: threading.Lock,
+    generalised_cost_parameters: GeneralisedCostFactors,
 ) -> dict[str, Any]:
     """Calculate cost between 2 zones using OTP.
 
@@ -132,6 +152,9 @@ def calculate_costs(
     lock : threading.Lock
         Lock object to avoid race conditions when writing
         to `response_file`.
+    generalised_cost_parameters : GeneralisedCostParameters
+        Factors and other parameters for calculating the
+        generalised cost.
 
     Returns
     -------
@@ -150,6 +173,11 @@ def calculate_costs(
     )
     url, result = routing.get_route_itineraries(parameters.server_url, rp_params)
 
+    if result.plan is not None:
+        # Update itineraries with generalised cost
+        for itinerary in result.plan.itineraries:
+            generalised_cost(itinerary, generalised_cost_parameters)
+
     cost_res = CostResults(
         origin=parameters.origin,
         destination=parameters.destination,
@@ -163,12 +191,52 @@ def calculate_costs(
     return _matrix_costs(cost_res)
 
 
-# TODO(MB) Additional parameter for generalised cost calculation parameters
-# and return generalised cost as a separate float
+def generalised_cost(
+    itinerary: routing.Itinerary, factors: GeneralisedCostFactors
+) -> None:
+    """Calculate the generalised cost and update value in `itinerary`.
+
+    Times given in `itinerary` shoul be in seconds and are converted
+    to minutes for the calculation.
+    Distances given in `itinerary` should be in metres and are converted
+    to km for the calculation.
+
+    Parameters
+    ----------
+    itinerary : routing.Itinerary
+        Route itinerary.
+    factors : GeneralisedCostParameters
+        Factors for generalised cost calculation.
+    """
+    wait_time = itinerary.waitingTime * factors.wait_time
+    transfer_penalty = itinerary.transfers * factors.transfer_number
+    walk_time = itinerary.walkTime / 60 * factors.walk_time
+    transit_time = itinerary.transitTime / 60 * factors.transit_time
+    walk_distance = itinerary.walkDistance / 1000 * factors.walk_distance
+
+    transit_distance = sum(
+        l.distance for l in itinerary.legs if l.mode in routing.Mode.transit_modes()
+    )
+    transit_distance = transit_distance / 1000 * factors.transit_distance
+
+    itinerary.generalised_cost = (
+        wait_time
+        + transfer_penalty
+        + walk_time
+        + transit_time
+        + walk_distance
+        + transit_distance
+    )
+
+
 def _matrix_costs(result: CostResults) -> dict:
     matrix_values = {
         "origin": result.origin.name,
         "destination": result.destination.name,
+        "origin_id": result.origin.id,
+        "destination_id": result.destination.id,
+        "origin_zone_system": result.origin.zone_system,
+        "destination_zone_system": result.destination.zone_system,
     }
 
     if result.plan is None:
@@ -184,13 +252,18 @@ def _matrix_costs(result: CostResults) -> dict:
         "transitTime",
         "waitingTime",
         "walkDistance",
-        "generalizedCost",
+        "otp_generalised_cost",
         "transfers",
+        "generalised_cost",
     ]
     for s in stats:
         values = []
         for it in result.plan.itineraries:
-            values.append(getattr(it, s, np.nan))
+            val = getattr(it, s)
+            # Set value to NaN if it doesn't exist or isn't set
+            if val is None:
+                val = np.nan
+            values.append(val)
 
         matrix_values[f"mean_{s}"] = np.nanmean(values)
 
@@ -203,11 +276,34 @@ def _matrix_costs(result: CostResults) -> dict:
     return matrix_values
 
 
+def _write_matrix_files(
+    data: list[dict[str, float]],
+    matrix_file: pathlib.Path,
+    aggregation: AggregationMethod,
+) -> None:
+    matrix = pd.DataFrame(data)
+
+    metrics_file = matrix_file.with_name(matrix_file.stem + "-metrics.csv")
+    matrix.to_csv(metrics_file, index=False)
+    LOG.info("Written cost metrics to %s", metrics_file)
+
+    # Pivot generalised cost
+    gen_cost = matrix.pivot(
+        index="origin_id",
+        columns="destination_id",
+        values=f"{aggregation}_generalised_cost",
+    )
+    gen_cost.to_csv(matrix_file)
+    LOG.info("Written %s generalised cost matrix to %s", aggregation, matrix_file)
+
+
 def build_cost_matrix(
     zone_centroids: gpd.GeoDataFrame,
     centroids_columns: centroids.ZoneCentroidColumns,
     settings: CostSettings,
     matrix_file: pathlib.Path,
+    generalised_cost_parameters: GeneralisedCostFactors,
+    aggregation_method: AggregationMethod,
     workers: int = 0,
 ) -> None:
     """Create cost matrix for all zone to zone pairs.
@@ -222,6 +318,11 @@ def build_cost_matrix(
         Settings for calculating the costs.
     matrix_file : pathlib.Path
         Path to save the cost matrix to.
+    generalised_cost_parameters : GeneralisedCostParameters
+        Factors and other parameters for calculating the
+        generalised cost.
+    aggregation_method : AggregationMethod
+        Aggregation method used for generalised cost matrix.
     workers : int, default 0
         Number of threads to create during calculations.
     """
@@ -232,7 +333,14 @@ def build_cost_matrix(
     response_file = matrix_file.with_name(matrix_file.name + "-response_data.jsonl")
     with open(response_file, "wt") as responses:
         iterator = util.multithread_function(
-            workers, calculate_costs, jobs, dict(response_file=responses, lock=lock)
+            workers,
+            calculate_costs,
+            jobs,
+            dict(
+                response_file=responses,
+                lock=lock,
+                generalised_cost_parameters=generalised_cost_parameters.copy(),
+            ),
         )
 
         matrix_data = []
@@ -246,14 +354,13 @@ def build_cost_matrix(
             matrix_data.append(res)
 
     LOG.info("Written responses to %s", response_file)
-
-    matrix = pd.DataFrame(matrix_data)
-    matrix.to_csv(matrix_file, index=False)
-    LOG.info("Written cost matrix %s", matrix_file)
+    _write_matrix_files(matrix_data, matrix_file, aggregation_method)
 
 
 def cost_matrix_from_responses(
-    responses_file: pathlib.Path, matrix_file: pathlib.Path
+    responses_file: pathlib.Path,
+    matrix_file: pathlib.Path,
+    aggregation_method: AggregationMethod,
 ) -> None:
     """Create cost matrix CSV from responses JSON lines file.
 
@@ -263,6 +370,8 @@ def cost_matrix_from_responses(
         Path to JSON lines file containing `CostResults`.
     matrix_file : pathlib.Path
         Path to CSV file to output cost metrics to.
+    aggregation_method : AggregationMethod
+        Aggregation method used for generalised cost matrix.
     """
     matrix_data = []
     with open(responses_file, "rt") as responses:
@@ -270,8 +379,7 @@ def cost_matrix_from_responses(
             responses, desc="Calculating cost matrix", dynamic_ncols=True
         ):
             results = CostResults.parse_raw(line)
+            # TODO(MB) Recalculate generalised cost if new parameters are provided
             matrix_data.append(_matrix_costs(results))
 
-    matrix = pd.DataFrame(matrix_data)
-    matrix.to_csv(matrix_file, index=False)
-    LOG.info("Written cost matrix to %s", matrix_file)
+    _write_matrix_files(matrix_data, matrix_file, aggregation_method)

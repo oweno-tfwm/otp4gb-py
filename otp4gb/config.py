@@ -12,6 +12,7 @@ from typing import NamedTuple
 import pydantic
 
 from otp4gb.config_base import BaseConfig
+from otp4gb import cost, routing
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(sys.argv[0]))
@@ -64,8 +65,10 @@ class ProcessConfig(BaseConfig):
     osm_file: str
     gtfs_files: list[str]
     travel_time: datetime.datetime
-    modes: list[str]
+    modes: list[list[routing.Mode]]
     centroids: str
+    generalised_cost_factors: cost.GeneralisedCostFactors
+    iterinary_aggregation_method: cost.AggregationMethod = cost.AggregationMethod.MEAN
     max_walk_distance: int = 2500
     number_of_threads: int = 0
     no_server: bool = False
