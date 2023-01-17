@@ -57,6 +57,7 @@ class Server:
         logger.info("OTP server started")
 
     def _check_server(self):
+        logger.info("Checking server")
         TIMEOUT = 30
         MAX_RETRIES = 10
         server_up = False
@@ -64,12 +65,15 @@ class Server:
         while not server_up:
             try:
                 self.send_request()
+                logger.info("Server responded")
                 server_up = True
-            except urllib.error.URLError:
+            except urllib.error.URLError as error:
                 if retries > MAX_RETRIES:
                     raise Exception("Maximum retries exceeded")
                 retries += 1
-                logger.info("Server not available. Retry %s", retries)
+                logger.info(
+                    "Server not available. Retry %s. Server error: %s", retries, error
+                )
                 time.sleep(TIMEOUT)
 
     def send_request(self, path="", query=None):
