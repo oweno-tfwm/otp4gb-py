@@ -96,7 +96,7 @@ def main():
             ) / "costs/{tp_name}/{modes}_costs_{dt:%Y%m%dT%H%M}.csv".format(
                 tp_name=time_period.name, modes="_".join(modes), dt=travel_datetime
             )
-            matrix_path.parent.mkdir(exist_ok=True)
+            matrix_path.parent.mkdir(exist_ok=True, parents=True)
 
             cost.build_cost_matrix(
                 centroids,

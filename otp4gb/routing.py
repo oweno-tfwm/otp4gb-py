@@ -3,6 +3,7 @@
 
 ##### IMPORTS #####
 from __future__ import annotations
+import dataclasses
 
 # Standard imports
 import datetime
@@ -24,6 +25,7 @@ LOG = logging.getLogger(__name__)
 ROUTER_API_ROUTE = "otp/routers/default/plan"
 REQUEST_TIMEOUT = 5
 REQUEST_RETRIES = 10
+OTP_ERRORS = {"NO_TRANSIT": 406, "TOO_CLOSE": 409}
 
 ##### CLASSES #####
 class Mode(enum.StrEnum):
@@ -64,7 +66,7 @@ class RoutePlanParameters(pydantic.BaseModel):
             {
                 "fromPlace": [str(i) for i in self.fromPlace.coords],
                 "toPlace": [str(i) for i in self.toPlace.coords],
-                "time": self.time.strftime("%H:%M%p"),
+                "time": self.time.strftime("%I:%M%p"),
                 "date": self.date.strftime("%m-%d-%Y"),  # date in USA format
                 "mode": ",".join([s.upper() for s in self.mode]),
             }
@@ -187,34 +189,77 @@ class RoutePlanResults(pydantic.BaseModel):
     elevationMetadata: Optional[dict] = None
 
 
+@dataclasses.dataclass
+class _FakeResponse:
+    """Storing data when request errors, within `get_route_itineraries`."""
+
+    url: str
+    status_code: int
+    reason: str
+
+
 ##### FUNCTIONS #####
 def get_route_itineraries(
     server_url: str, parameters: RoutePlanParameters
 ) -> tuple[str, RoutePlanResults]:
+    """Request routing from Open Trip Planner server.
+
+    Parameters
+    ----------
+    server_url : str
+        URL for the OTP server.
+    parameters : RoutePlanParameters
+        Parameters for the route to request.
+
+    Returns
+    -------
+    str
+        Request URL, with parameters.
+    RoutePlanResults
+        OTP routing response.
+    """
+
+    def add_error(message: str) -> None:
+        error_message.append(f"Retry {retries}: {message}")
+
     url = parse.urljoin(server_url, ROUTER_API_ROUTE)
 
     retries = 0
-    result = None
+    error_message = []
+    end = False
     while True:
-        req_result = requests.get(
-            url, params=parameters.params(), timeout=REQUEST_TIMEOUT
-        )
+        req = requests.Request("GET", url, params=parameters.params())
+        prepared = req.prepare()
 
-        if retries > REQUEST_RETRIES:
-            if result is None:
-                result = RoutePlanResults(
-                    requestParameters=parameters,
-                    error=RoutePlanError(
-                        id=req_result.status_code,
-                        msg=f"request error {req_result.status_code}: {req_result.reason}",
-                        message=f"given up after {retries} retries",
-                    ),
-                )
-            return req_result.url, result
+        try:
+            session = requests.Session()
+            response = session.send(prepared, timeout=REQUEST_TIMEOUT)
+        except requests.exceptions.RequestException as error:
+            msg = f"{error.__class__.__name__}: {error}"
+            add_error(msg)
+            response = _FakeResponse(url=prepared.url, status_code=-10, reason=msg)
 
-        if req_result.status_code == requests.codes.OK:
-            result = RoutePlanResults.parse_raw(req_result.text)
+        if response.status_code == requests.codes.OK:
+            result = RoutePlanResults.parse_raw(response.text)
             if result.error is None:
-                return req_result.url, result
+                return response.url, result
+            if result.error.id in OTP_ERRORS.values():
+                end = True # No point retrying OTP errors
+
+            add_error(
+                f"OTP Error {result.error.id}: {result.error.msg} {result.error.message}"
+            )
+
+        if end or retries > REQUEST_RETRIES:
+            error_message.append("max retries reached")
+            result = RoutePlanResults(
+                requestParameters=parameters,
+                error=RoutePlanError(
+                    id=response.status_code,
+                    msg=f"Response {response.status_code}: {response.reason}",
+                    message="\n".join(error_message),
+                ),
+            )
+            return response.url, result
 
         retries += 1
