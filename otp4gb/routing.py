@@ -10,6 +10,7 @@ import enum
 import logging
 import re
 from typing import Any, Optional, Union
+from urllib import parse
 
 # Third party imports
 import pydantic
@@ -21,6 +22,8 @@ from shapely import geometry
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
 ROUTER_API_ROUTE = "otp/routers/default/plan"
+REQUEST_TIMEOUT = 5
+REQUEST_RETRIES = 10
 
 ##### CLASSES #####
 class Mode(enum.StrEnum):
@@ -187,32 +190,30 @@ class RoutePlanResults(pydantic.BaseModel):
 def get_route_itineraries(
     server_url: str, parameters: RoutePlanParameters
 ) -> tuple[str, RoutePlanResults]:
-    # TODO Use urllib.parse.urljoin
-    if not server_url.endswith("/"):
-        server_url += "/"
-    url = server_url + ROUTER_API_ROUTE
+    url = parse.urljoin(server_url, ROUTER_API_ROUTE)
 
-    r = requests.get(url, params=parameters.params())
+    retries = 0
+    result = None
+    while True:
+        req_result = requests.get(
+            url, params=parameters.params(), timeout=REQUEST_TIMEOUT
+        )
 
-    return r.url, RoutePlanResults.parse_raw(r.text)
+        if retries > REQUEST_RETRIES:
+            if result is None:
+                result = RoutePlanResults(
+                    requestParameters=parameters,
+                    error=RoutePlanError(
+                        id=req_result.status_code,
+                        msg=f"request error {req_result.status_code}: {req_result.reason}",
+                        message=f"given up after {retries} retries",
+                    ),
+                )
+            return req_result.url, result
 
+        if req_result.status_code == requests.codes.OK:
+            result = RoutePlanResults.parse_raw(req_result.text)
+            if result.error is None:
+                return req_result.url, result
 
-if __name__ == "__main__":
-
-    parameters = RoutePlanParameters(
-        fromPlace="(53.76819584019795, -1.602630615234375 )",
-        toPlace="53.79821757312943, -1.498260498046875",
-        date=datetime.date(2019, 9, 10),
-        time=datetime.time(8, 30),
-        mode=["BUS"],
-    )
-    parameters = RoutePlanParameters(
-        fromPlace="53.639349,-1.5139415",
-        toPlace="53.643807,-1.4693124",
-        date=datetime.date(2019, 9, 10),
-        time=datetime.time(8, 30),
-        mode=["BUS", "WALK"],
-    )
-
-    res_url, result = get_route_itineraries("http://localhost:8080", parameters)
-    print(res_url, result)
+        retries += 1

@@ -70,7 +70,7 @@ class ProcessConfig(BaseConfig):
     generalised_cost_factors: cost.GeneralisedCostFactors
     iterinary_aggregation_method: cost.AggregationMethod = cost.AggregationMethod.MEAN
     max_walk_distance: int = 2500
-    number_of_threads: int = 0
+    number_of_threads: pydantic.conint(ge=0, le=10) = 0
     no_server: bool = False
 
     # Makes a classmethod not recognised by pylint, hence disabling self check
