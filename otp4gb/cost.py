@@ -299,6 +299,20 @@ def _write_matrix_files(
     matrix.to_csv(metrics_file, index=False)
     LOG.info("Written cost metrics to %s", metrics_file)
 
+    try:
+        LOG.info(
+            "Minimum departure time from all responses {:%x %X}".format(
+                matrix["min_startTime"].min()
+            )
+        )
+        LOG.info(
+            "Maximum arrival time from all responses {:%x %X}".format(
+                matrix["max_endTime"].max()
+            )
+        )
+    except KeyError as error:
+        LOG.warning("Start / end times unavailable in matrix: %s", error)
+
     gen_cost_column = f"{aggregation}_generalised_cost"
 
     if gen_cost_column not in matrix.columns:
