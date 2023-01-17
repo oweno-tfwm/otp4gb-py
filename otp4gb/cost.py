@@ -121,6 +121,9 @@ def build_calculation_parameters(
 
     params = []
     for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
+        if o == d:
+            continue
+
         params.append(
             CalculationParameters(
                 server_url=settings.server_url,
@@ -277,6 +280,11 @@ def _matrix_costs(result: CostResults) -> dict:
             matrix_values[f"max_{s}"] = np.nanmax(values)
             matrix_values[f"num_nans_{s}"] = np.sum(np.isnan(values))
 
+    matrix_values["min_startTime"] = min(i.startTime for i in result.plan.itineraries)
+    matrix_values["max_startTime"] = max(i.startTime for i in result.plan.itineraries)
+    matrix_values["min_endTime"] = min(i.endTime for i in result.plan.itineraries)
+    matrix_values["max_endTime"] = max(i.endTime for i in result.plan.itineraries)
+
     return matrix_values
 
 
@@ -291,11 +299,19 @@ def _write_matrix_files(
     matrix.to_csv(metrics_file, index=False)
     LOG.info("Written cost metrics to %s", metrics_file)
 
+    gen_cost_column = f"{aggregation}_generalised_cost"
+
+    if gen_cost_column not in matrix.columns:
+        LOG.error(
+            "Generalised cost column (%s) not found in "
+            "matrix metrics, so skipping matrix creation",
+            gen_cost_column,
+        )
+        return
+
     # Pivot generalised cost
     gen_cost = matrix.pivot(
-        index="origin_id",
-        columns="destination_id",
-        values=f"{aggregation}_generalised_cost",
+        index="origin_id", columns="destination_id", values=gen_cost_column
     )
     gen_cost.to_csv(matrix_file)
     LOG.info("Written %s generalised cost matrix to %s", aggregation, matrix_file)
