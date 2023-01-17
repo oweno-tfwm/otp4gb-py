@@ -1,4 +1,5 @@
 import atexit
+import datetime
 import logging
 import os
 import pathlib
@@ -33,8 +34,10 @@ def main():
 
     try:
         opt_base_folder = os.path.abspath(sys.argv[1])
-    except IndexError:
+    except IndexError as error:
         logger.error("No path provided")
+        raise ValueError("Base folder not provided") from error
+
     log_file = file_handler_factory(
         "process.log", os.path.join(opt_base_folder, "logs")
     )
@@ -66,31 +69,44 @@ def main():
     centroids = centroids.clip(clip_box)
     logger.info("Considering %d centroids", len(centroids))
 
-    # Build cost matrix
-    for modes in config.modes:
-        cost_settings = cost.CostSettings(
-            server_url="http://localhost:8080",
-            modes=modes,
-            datetime=config.travel_time,
-            arrive_by=True,
-            max_walk_distance=config.max_walk_distance,
-        )
+    for time_period in config.time_periods:
+        search_window_seconds = None
+        if time_period.search_window_minutes is not None:
+            search_window_seconds = time_period.search_window_minutes * 60
 
-        matrix_path = (
-            pathlib.Path(opt_base_folder)
-            / f"costs/{'_'.join(modes)}_costs_{config.travel_time:%Y%m%dT%H%M}.csv"
+        travel_datetime = datetime.datetime.combine(
+            config.date, time_period.travel_time
         )
-        matrix_path.parent.mkdir(exist_ok=True)
+        for modes in config.modes:
+            print() # Empty line space in cmd window
+            logger.info(
+                "Calculating costs for %s - %s", time_period.name, ", ".join(modes)
+            )
+            cost_settings = cost.CostSettings(
+                server_url="http://localhost:8080",
+                modes=modes,
+                datetime=travel_datetime,
+                arrive_by=True,
+                search_window_seconds=search_window_seconds,
+                max_walk_distance=config.max_walk_distance,
+            )
 
-        cost.build_cost_matrix(
-            centroids,
-            centroids_columns,
-            cost_settings,
-            matrix_path,
-            config.generalised_cost_factors,
-            config.iterinary_aggregation_method,
-            config.number_of_threads,
-        )
+            matrix_path = pathlib.Path(
+                opt_base_folder
+            ) / "costs/{tp_name}/{modes}_costs_{dt:%Y%m%dT%H%M}.csv".format(
+                tp_name=time_period.name, modes="_".join(modes), dt=travel_datetime
+            )
+            matrix_path.parent.mkdir(exist_ok=True)
+
+            cost.build_cost_matrix(
+                centroids,
+                centroids_columns,
+                cost_settings,
+                matrix_path,
+                config.generalised_cost_factors,
+                config.iterinary_aggregation_method,
+                config.number_of_threads,
+            )
 
     # Stop OTP Server
     server.stop()

@@ -46,6 +46,7 @@ class RoutePlanParameters(pydantic.BaseModel):
     time: datetime.time
     mode: Union[list[str], str]
     arriveBy: bool = False
+    searchWindow: Optional[int] = None
     wheelchair: bool = False
     debugItineraryFilter: bool = False
     showIntermediateStops: bool = False

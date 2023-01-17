@@ -7,7 +7,7 @@ import logging
 import os
 import pathlib
 import sys
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import pydantic
 
@@ -57,6 +57,14 @@ class Bounds(NamedTuple):
         return cls(*values)
 
 
+class TimePeriod(pydantic.BaseModel):
+    """Data required for a single time period."""
+
+    name: str
+    travel_time: datetime.time
+    search_window_minutes: Optional[int] = None
+
+
 class ProcessConfig(BaseConfig):
     """Class for managing (and parsing) the YAML config file."""
 
@@ -64,7 +72,7 @@ class ProcessConfig(BaseConfig):
     extents: Bounds
     osm_file: str
     gtfs_files: list[str]
-    travel_time: datetime.datetime
+    time_periods: list[TimePeriod]
     modes: list[list[routing.Mode]]
     centroids: str
     generalised_cost_factors: cost.GeneralisedCostFactors

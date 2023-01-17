@@ -35,6 +35,7 @@ class CostSettings(NamedTuple):
     modes: list[routing.Mode]
     datetime: datetime.datetime
     arrive_by: bool = False
+    search_window_seconds: Optional[int] = None
     wheelchair: bool = False
     max_walk_distance: float = 1000
 
@@ -48,6 +49,7 @@ class CalculationParameters(NamedTuple):
     origin: routing.Place
     destination: routing.Place
     arrive_by: bool = False
+    searchWindow: Optional[int] = None
     wheelchair: bool = False
     max_walk_distance: float = 1000
 
@@ -127,6 +129,7 @@ def build_calculation_parameters(
                 origin=row_to_place(zone_centroids.loc[o]),
                 destination=row_to_place(zone_centroids.loc[d]),
                 arrive_by=settings.arrive_by,
+                searchWindow=settings.search_window_seconds,
                 wheelchair=settings.wheelchair,
                 max_walk_distance=settings.max_walk_distance,
             )
@@ -168,6 +171,7 @@ def calculate_costs(
         time=parameters.datetime.time(),
         mode=parameters.modes,
         arriveBy=parameters.arrive_by,
+        searchWindow=parameters.searchWindow,
         wheelchair=parameters.wheelchair,
         maxWalkDistance=parameters.max_walk_distance,
     )

@@ -65,6 +65,7 @@ def main():
     opt_force = False
     opt_date = config.date
     extents = config.extents
+    # TODO(MB) Update this to use argparser module
     for o, a in opts:
         if o == "-b" or o == "--bounds":
             try:
@@ -86,8 +87,6 @@ def main():
                 opt_date = None
             continue
         assert False, "Unhandled option"
-
-    input_dir = os.path.join(opt_base_folder, "input")
 
     filtered_graph_folder = os.path.join(opt_base_folder, "graphs", "filtered")
 
