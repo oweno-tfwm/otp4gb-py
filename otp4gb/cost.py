@@ -181,8 +181,15 @@ def calculate_costs(
     url, result = routing.get_route_itineraries(parameters.server_url, rp_params)
 
     if result.plan is not None:
-        # Update itineraries with generalised cost
+        result.plan.date = result.plan.date.astimezone(parameters.datetime.tzinfo)
+
         for itinerary in result.plan.itineraries:
+            itinerary.startTime = itinerary.startTime.astimezone(
+                parameters.datetime.tzinfo
+            )
+            itinerary.endTime = itinerary.endTime.astimezone(parameters.datetime.tzinfo)
+
+            # Update itineraries with generalised cost
             generalised_cost(itinerary, generalised_cost_parameters)
 
     cost_res = CostResults(
@@ -237,7 +244,7 @@ def generalised_cost(
 
 
 def _matrix_costs(result: CostResults) -> dict:
-    matrix_values = {
+    matrix_values: dict[str, str | int | float | datetime.datetime] = {
         "origin": result.origin.name,
         "destination": result.destination.name,
         "origin_id": result.origin.id,
@@ -301,12 +308,12 @@ def _write_matrix_files(
 
     try:
         LOG.info(
-            "Minimum departure time from all responses {:%x %X}".format(
+            "Minimum departure time from all responses {:%x %X %Z}".format(
                 matrix["min_startTime"].min()
             )
         )
         LOG.info(
-            "Maximum arrival time from all responses {:%x %X}".format(
+            "Maximum arrival time from all responses {:%x %X %Z}".format(
                 matrix["max_endTime"].max()
             )
         )

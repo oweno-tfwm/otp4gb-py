@@ -77,8 +77,15 @@ def main():
         travel_datetime = datetime.datetime.combine(
             config.date, time_period.travel_time
         )
+        # Assume time is in local timezone
+        travel_datetime = travel_datetime.astimezone()
+        logger.info(
+            "Given date / time is assumed to be in local timezone: %s",
+            travel_datetime.tzinfo,
+        )
+
         for modes in config.modes:
-            print() # Empty line space in cmd window
+            print()  # Empty line space in cmd window
             logger.info(
                 "Calculating costs for %s - %s", time_period.name, ", ".join(modes)
             )
