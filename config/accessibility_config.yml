@@ -1,0 +1,9 @@
+cost_metrics:
+  - C:\WSP_Projects\TfN BSIP\OTP4GB-Py Outputs\Sheffield Test\costs\AM\BUS_WALK_costs_20190910T0900-metrics.csv
+  - C:\WSP_Projects\TfN BSIP\OTP4GB-Py Outputs\Sheffield Test\costs\IP\BUS_WALK_costs_20190910T1400-metrics.csv
+  - C:\WSP_Projects\TfN BSIP\OTP4GB-Py Outputs\Sheffield Test\costs\PM\BUS_WALK_costs_20190910T1900-metrics.csv
+output_folder: C:\WSP_Projects\TfN BSIP\OTP4GB-Py Outputs\Sheffield Test\accessibility
+aggregation_method: mean
+accessibility_time_minutes: 30
+landuse_data:
+  - C:\Users\ukmjb018\OneDrive - WSP O365\WSP_Projects\TfN BSIP\Transport Score\BRES data\bres_employment_2019.csv

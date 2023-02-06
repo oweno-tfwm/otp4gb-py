@@ -244,6 +244,33 @@ Additional a `cost_matrix_from_responses` function is provided (in the same cost
 use the responses file to recalculate the generslised cost matrix with different parameters and
 recreate the CSV outputs.
 
+## Post Processing
+This sections outlines some stand-alone post-processing scripts to perform additional analysis
+on the outputs from OTP4GB-Py.
+
+### Accessibility
+The [accessibility](accessibility.py) script uses the zone to zone average durations to calculate
+the amount of various land use metrics which can be reached from a zone in a given time limit. The
+inputs for this script are provided in a config file and outlined in table 3, (see 
+[accessibility config](config/accessibility_config.yml) for an example).
+
+**Table 3:** *Details of the config file parameters for the accessibility script.*
+| Parameter                  | Type               | Default | Description                                                                                                      |
+| :------------------------- | :----------------- | :------ | :--------------------------------------------------------------------------------------------------------------- |
+| cost_metrics               | list of file paths | -       | List of cost metrics CSVs (from OTP4GB-Py process).                                                              |
+| output_folder              | path               | -       | Path to folder to save outputs to.                                                                               |
+| accessibility_time_minutes | Integer            | -       | Maximum time (minutes) for OD pairs to include in the cost metrics.                                              |
+| landuse_data               | list of file paths | -       | List of land use files which should contain a column named "id" and any number of other columns containing data. |
+| aggregation_method         | mean or median     | mean    | Type of average duration to use from the cost metrics files.                                                     |
+
+**Note:** Accessibility calculations will be done for the complete combination of all the land use
+files and all the cost metrics files.
+
+#### Outputs
+This process outputs a single new CSV file for each combination of cost metrics and land use
+given as an input. The output file takes the origin zone information from the cost metrics files
+and contains all the columns provided in the land use input data.
+
 [^1]: OTP4GB-Py has only been tested on Windows 10 with JDK 17.
 [^2]: Running this command should be done from within the "Anaconda Prompt" after moving to the
   OTP4GB-Py directory and activating the "otp4gb-py" environment, see [Python](#python) section
