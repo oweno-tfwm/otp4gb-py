@@ -146,12 +146,18 @@ def load_cost_metrics(
         index_col=COST_INDEX_COLUMNS,
         usecols=COST_INDEX_COLUMNS + [duration_column],
     )
+    before = len(costs)
+    costs = costs.dropna(axis=0)
+    nan_rows = before - len(costs)
+
     mask = costs[duration_column] <= filter_time_mins * 60
     LOG.info(
-        "Dropped %s rows with %s duration > %s mins, %s rows remaining",
+        "Dropped %f rows with %s duration > %s mins and %s "
+        "rows without a duration, %s rows remaining",
         len(mask) - mask.sum(),
         aggregation_method,
         filter_time_mins,
+        nan_rows,
         mask.sum(),
     )
 
