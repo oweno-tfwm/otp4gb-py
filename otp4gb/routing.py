@@ -59,7 +59,9 @@ class RoutePlanParameters(pydantic.BaseModel):
         arbitrary_types_allowed = True
 
     def params(self) -> dict[str, Any]:
-        params: dict[str, Any] = {k: str(v) for k, v in self.dict().items()}
+        params: dict[str, Any] = {
+            k: str(v) for k, v in self.dict().items() if v is not None
+        }
 
         # Update any parameters which require specific creation
         params.update(
@@ -244,7 +246,7 @@ def get_route_itineraries(
             if result.error is None:
                 return response.url, result
             if result.error.id in OTP_ERRORS.values():
-                end = True # No point retrying OTP errors
+                end = True  # No point retrying OTP errors
 
             add_error(
                 f"OTP Error {result.error.id}: {result.error.msg} {result.error.message}"

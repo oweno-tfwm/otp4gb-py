@@ -58,6 +58,10 @@ def gtfs_filter(
         temp_folder,
     ]
 
+    # TODO(MB) Add check to see if only the agency file remains (all dates
+    # and routes have been filtered out), if this is the case don't create
+    # the zip file for this area
+
     logger.debug(command)
     subprocess.run(command, shell=True)
     shutil.make_archive(output_file, "zip", temp_folder)
