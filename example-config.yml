@@ -1,13 +1,13 @@
 # Date for filtered GTFS files
 date: 2019-09-10
 
-# Specify the extents to clip the graph to. These are for Bradford.
+# Specify the extents to clip the graph to. These are for Sheffield
 # Alternatively, you can provide a named extent (as defined in otp4gb/extents.yml) as a command line -b/--bounds option
 extents:
-  max_lon: -1.418634
-  min_lon: -2.084680
-  max_lat: 53.978646
-  min_lat: 53.605485
+  min_lon: -1.5279
+  max_lon: -1.4119
+  max_lat: 53.4416
+  min_lat: 53.3347
 
 # Specify the osm file to use
 osm_file: great-britain-latest.osm.pbf
@@ -15,16 +15,37 @@ osm_file: great-britain-latest.osm.pbf
 # Specify the list of GTFS files to process
 gtfs_files:
   - GBRail_GTFS.zip
+  - EM_GTFS.zip
   - Y_GTFS.zip
 
-# Options affecting the routing
-travel_time: 2019-09-10T08:30:00
-buffer_size: 100
+# Length of time to search before the travel time,
+# if not given then it is calculated based on route availability
+time_periods:
+  - name: AM
+    travel_time: 09:00
+    search_window_minutes: 60
+  - name: IP
+    travel_time: 14:00
+    search_window_minutes: 60
+  - name: PM
+    travel_time: 19:00
+    search_window_minutes: 60
+
 modes:
-  - BUS,WALK
-  - TRANSIT,WALK
-  - BICYCLE
-  - CAR
-  - WALK
-centroids: MSOACentroids_NorthEngland_LatLong.csv
-run_multiprocessing: false
+  - - BUS
+    - WALK
+
+# Factors applied to the respective time / distance when calculation the generalised cost
+# times in the generalised cost calculation are in minutes and distances are km
+generalised_cost_factors:
+  wait_time: 1
+  transfer_number: 1
+  walk_time: 1
+  transit_time: 1
+  walk_distance: 1
+  transit_distance: 1
+
+# Method used for getting the average generalised cost from all itineraries produced by OTP
+iterinary_aggregation_method: mean
+max_walk_distance: 10000
+number_of_threads: 10
