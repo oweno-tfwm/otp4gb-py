@@ -22,7 +22,10 @@ import pydantic
 import tqdm
 
 # Local imports
-from otp4gb import routing, util, centroids, config
+from otp4gb import routing, util, centroids#, config
+#For now just specify maximum radius here
+filter_radius = 1000  #metres - (Set to 0 if not needed)
+
 
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
@@ -118,9 +121,10 @@ def build_calculation_parameters(
     zone_centroids = zone_centroids.set_index(centroids_columns.id)[
         [centroids_columns.name, centroids_columns.system, "geometry"]
     ]
-
+    
+    
     # Create GDF of all OD pairs & work out distance between them.
-    if config.ProcessConfig().filter_radius is not None:
+    if filter_radius != 0:
 
         origins = []
         destinations = []
@@ -130,34 +134,38 @@ def build_calculation_parameters(
                 continue
             origins.append(o)
             destinations.append(d)
-            OD_pairs.append('_'.join(str(o), str(d)))
-
+            OD_pairs.append('_'.join((str(o), str(d))))
+        
         # DF of all OD pairs
-        OD_pairs = gpd.GeoDataFrame(data={'Origins': origins,
-                                          'Destinations': destinations,
-                                          'OD_pairs': OD_pairs})
-
+        OD_pairs = gpd.GeoDataFrame(data={"Origins": origins,
+                                          "Destinations": destinations,
+                                          "OD_pairs": OD_pairs})
+        
+        # Test print statements - checking that zone_centroids indeed does contain 'geometry'
+        print("\nPrint statement of zone_centroids data types:\n", zone_centroids.dtypes)
+        print("\n","geometry" in zone_centroids, "Boolean check - Is 'geometry' %in% zone_centroids?\n\n")
+        
         # Join on zone centroid data - Origins
-        OD_pairs.merge(how='left',
-                       right=zone_centroids['geometery'],
-                       left_on='Origins',
+        OD_pairs.merge(how="left",
+                       right=zone_centroids.geometry,
+                       left_on="Origins",
                        right_on=zone_centroids.index)
 
-        OD_pairs.rename(columns={'geometry': 'Origin_centroids'},
+        OD_pairs.rename(columns={"geometry":"Origin_centroids"},
                         inplace=True)
 
         # Join on zone centroids - Destinations
-        OD_pairs.merge(how='left',
-                       right=zone_centroids['geometry'],
-                       left_on='Destinations',
+        OD_pairs.merge(how="left",
+                       right=zone_centroids.geometry,
+                       left_on="Destinations",
                        right_on=zone_centroids.index)
 
-        OD_pairs.rename(columns={'geometry': 'Destination_centroids'},
+        OD_pairs.rename(columns={"geometry":"Destination_centroids"},
                         inplace=True)
 
         # Work out distance between all OD pairs
         OD_pairs['distances'] = OD_pairs.apply(
-            lambda row: row['Origin_centroids'].distance(row['Destination_centroids']),
+            lambda row: row["Origin_centroids"].distance(row["Destination_centroids"]),
             axis=1)
 
     params = []
@@ -166,10 +174,10 @@ def build_calculation_parameters(
             continue
 
         # Check if od journey exceeds maximum distance
-        if config.ProcessConfig().filter_radius is not None:
+        if filter_radius != 0:
             od_code = '_'.join(str(o), str(d))
-            od_distance = OD_pairs[OD_pairs['OD_pairs'] == od_code]['distances'].values[0]
-            if od_distance > config.ProcessConfig().filter_radius:
+            od_distance = OD_pairs[OD_pairs["OD_pairs"] == od_code]["distances"].values[0]
+            if od_distance > filter_radius:
                 continue
 
         params.append(
