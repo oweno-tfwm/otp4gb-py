@@ -22,7 +22,7 @@ import pydantic
 import tqdm
 
 # Local imports
-from otp4gb import routing, util, centroids
+from otp4gb import routing, util, centroids, config
 
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
@@ -119,10 +119,58 @@ def build_calculation_parameters(
         [centroids_columns.name, centroids_columns.system, "geometry"]
     ]
 
+    # Create GDF of all OD pairs & work out distance between them.
+    if config.ProcessConfig().filter_radius is not None:
+
+        origins = []
+        destinations = []
+        OD_pairs = []
+        for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
+            if o == d:
+                continue
+            origins.append(o)
+            destinations.append(d)
+            OD_pairs.append('_'.join(str(o), str(d)))
+
+        # DF of all OD pairs
+        OD_pairs = gpd.GeoDataFrame(data={'Origins': origins,
+                                          'Destinations': destinations,
+                                          'OD_pairs': OD_pairs})
+
+        # Join on zone centroid data - Origins
+        OD_pairs.merge(how='left',
+                       right=zone_centroids['geometery'],
+                       left_on='Origins',
+                       right_on=zone_centroids.index)
+
+        OD_pairs.rename(columns={'geometry': 'Origin_centroids'},
+                        inplace=True)
+
+        # Join on zone centroids - Destinations
+        OD_pairs.merge(how='left',
+                       right=zone_centroids['geometry'],
+                       left_on='Destinations',
+                       right_on=zone_centroids.index)
+
+        OD_pairs.rename(columns={'geometry': 'Destination_centroids'},
+                        inplace=True)
+
+        # Work out distance between all OD pairs
+        OD_pairs['distances'] = OD_pairs.apply(
+            lambda row: row['Origin_centroids'].distance(row['Destination_centroids']),
+            axis=1)
+
     params = []
     for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
         if o == d:
             continue
+
+        # Check if od journey exceeds maximum distance
+        if config.ProcessConfig().filter_radius is not None:
+            od_code = '_'.join(str(o), str(d))
+            od_distance = OD_pairs[OD_pairs['OD_pairs'] == od_code]['distances'].values[0]
+            if od_distance > config.ProcessConfig().filter_radius:
+                continue
 
         params.append(
             CalculationParameters(

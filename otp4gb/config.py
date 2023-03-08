@@ -81,6 +81,9 @@ class ProcessConfig(BaseConfig):
     number_of_threads: pydantic.conint(ge=0, le=10) = 0
     no_server: bool = False
 
+    # Set maximum radius for TRSE LSOA analysis (set as 'None' if not required)
+    filter_radius = None #10km
+    
     # Makes a classmethod not recognised by pylint, hence disabling self check
     @pydantic.validator("extents", pre=True)
     def _extents(cls, value):  # pylint: disable=no-self-argument
