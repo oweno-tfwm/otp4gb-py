@@ -22,9 +22,7 @@ import pydantic
 import tqdm
 
 # Local imports
-from otp4gb import routing, util, centroids#, config
-#For now just specify maximum radius here
-filter_radius = 1000  #metres - (Set to 0 if not needed)
+from otp4gb import routing, util, centroids
 
 
 ##### CONSTANTS #####
@@ -91,6 +89,7 @@ def build_calculation_parameters(
     centroids_columns: centroids.ZoneCentroidColumns,
     settings: CostSettings,
 ) -> list[CalculationParameters]:
+    global zone_centroids_BnG
     """Build a list of parameters for running `calculate_costs`.
 
     Parameters
@@ -107,6 +106,9 @@ def build_calculation_parameters(
     list[CalculationParameters]
         Parameters to run `calculate_costs`.
     """
+    #### LSOA TRSE ####
+    # TODO: Move this to a config file as optional parameter
+    filter_radius = 12500  # metres (0 if not required)
 
     def row_to_place(row: pd.Series) -> routing.Place:
         return routing.Place(
@@ -121,80 +123,235 @@ def build_calculation_parameters(
     zone_centroids = zone_centroids.set_index(centroids_columns.id)[
         [centroids_columns.name, centroids_columns.system, "geometry"]
     ]
-    
-    
-    # Create GDF of all OD pairs & work out distance between them.
-    if filter_radius != 0:
+    #print('zone_centroids:', zone_centroids)
+    print("\n LSOA analysis maximum radius:", str(filter_radius))
+
+    # Load LSOA relevance and area type lookup file
+    import os
+    LSOA_relevance_path = os.path.join(os.getcwd(), 'Data', 'LSOA_amenities.csv')
+    LSOA_area_path = os.path.join(os.getcwd(), 'Data', 'compiled_LSOA_area_types.csv')
+    LSOA_relevance = pd.read_csv(LSOA_relevance_path)
+    LSOA_area_types = pd.read_csv(LSOA_area_path)
+
+    # Set zone id's as index, matching `zone_centroids`
+    LSOA_relevance.set_index('LSOA11CD', inplace=True)
+    LSOA_area_types.set_index('LSOA11CD', inplace=True)
+
+    compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
+
+    #TODO: find "area_type" and convert to "RUC" (Rural Urban Classification) as these are not area_types.
+    # Rural weighting for Origin LSOAs
+    LSOA_area_type_weights = {'A1': 1,
+                              'B1': 1,
+                              'C1': 1,
+                              'C2': 1,
+                              'D1': 1.25,
+                              'D2': 1.25,
+                              'E1': 1.5,
+                              'E2': 1.5}
+
+    # Create GeoDataFrame of all OD pairs & work out distance between them.
+    if (filter_radius != 0) & (os.path.isfile(compiled_centroids_path) is False):
+
+        print('\nA zone centroids file named "compiled_zone_centroids_with_filter.csv" could not be found.')
+        print('Creating `compiled_zone_centroids_with_filter.csv` now.')
+
+        # Create copy of zone_centroids to manipulate CRS (filter distance is metres (EPSG:27700))
+        zone_centroids_BnG = zone_centroids.copy()
+        zone_centroids_BnG = gpd.GeoDataFrame(zone_centroids_BnG)
+        zone_centroids_BnG.to_crs('EPSG:27700', inplace=True)
+        
+        # For joining destination centroids later 
+        zone_centroids_BnG_raw = zone_centroids_BnG.copy()
+
+        # Set crs to BnG [EPSG:27700] so distance calc is in metres.
+        zone_centroids_BnG.to_crs('EPSG:27700')
+
+        zone_centroids_BnG.drop(columns=['zone_system', 'zone_name'],
+                                inplace=True)
+
+        # Create a DataFrame of all possible OD combinations:
 
         origins = []
         destinations = []
         OD_pairs = []
+        LOG.info("Constructing distance GDF and assessing relevant Destination zones")
+        LSOA_ids = list(zone_centroids.index)
+
+        # Create possible combinations
+        length = 2  # An Origin & Destination
+        x = list(range(len(zone_centroids)))  # Possible Origins or Destinations
+        mesh = np.meshgrid(*([x] * length))
+        result = np.vstack([y.flat for y in mesh]).T
+
+        print('\nAnalysing', len(result), 'initial trips for destination relevance & same zone journeys.\n')
+
+        for i in tqdm.tqdm(zip(result)):
+            o = i[0][0]
+            d = i[0][1]
+
+            # Ignore same zone journeys
+            if o == d:
+                continue
+
+            # Check for relevance of Destination LSOA
+            if LSOA_relevance.loc[LSOA_ids[d]]['totals'] > 0:
+                origin = LSOA_ids[o]
+                destin = LSOA_ids[d]
+
+                origins.append(origin)
+                destinations.append(destin)
+                OD_pairs.append('_'.join((origin, destin)))
+            else:
+                # Destination LSOA is not relevant
+                continue
+        LOG.info("Removing: "+str((len(result) - len(origins)))+" trips, leaving: "+str(len(origins))+' trips remaining.\n')
+
+        LOG.info("Constructing Data Frame")
+        # DF of all OD pairs
+        OD_pairs = pd.DataFrame(data={'Origins': origins,
+                                      'Destinations': destinations,
+                                      'OD_pairs': OD_pairs})
+
+        LOG.info("Merging Origins to geometries")
+        # Join on zone centroid data for Origins
+        zone_centroids_BnG = zone_centroids_BnG.merge(how='left',
+                                                      right=OD_pairs,
+                                                      left_on=zone_centroids_BnG.index,
+                                                      right_on='Origins')
+                                                      
+        # Re-classify dataframe as GeoDataFrame                                              
+        zone_centroids_BnG = gpd.GeoDataFrame(zone_centroids_BnG,
+                                              crs='EPSG:27700')
+
+        # Rename Origin centroids col to Origin_centroids
+        zone_centroids_BnG.rename(columns={'geometry': 'Origin_centroids'},
+                                  inplace=True)
+        # Re-specify geometry
+        zone_centroids_BnG.set_geometry('Origin_centroids',
+                                         inplace=True,
+                                         crs='EPSG:27700')
+
+        LOG.info("Merging Destinations to geometries")
+        # Join on zone centroids data for Destinations
+        zone_centroids_BnG = zone_centroids_BnG.merge(how='left',
+                                                      right=zone_centroids_BnG_raw,
+                                                      left_on='Destinations',
+                                                      right_on=zone_centroids_BnG_raw.index)
+        # Re-classify dataframe as GeoDataFrame                                              
+        zone_centroids_BnG = gpd.GeoDataFrame(zone_centroids_BnG,
+                                              crs='EPSG:27700')
+
+        # Rename centroids to destination centroids
+        zone_centroids_BnG.rename(columns={'geometry': 'Destination_centroids'},
+                                  inplace=True)
+
+        LOG.info("Calculating journey distances")
+        # Work out distance between all OD pairs
+        zone_centroids_BnG['distances'] = zone_centroids_BnG['Origin_centroids'].distance(zone_centroids_BnG['Destination_centroids'])
+
+        # Print run stats for user
+        print('\nMaximum trip distance:', str(max(zone_centroids_BnG['distances'])),
+              '\nMinimum trip distance:', str(min(zone_centroids_BnG['distances'])), '\n')
+
+        # Short enough trips are the number of trips within the specified filter radius with Rural weighting applied
+        # to the filter distance. Any trip distance greater than this can now be removed.
+        short_enough_trips = len(zone_centroids_BnG[zone_centroids_BnG['distances'] < (filter_radius*LSOA_area_type_weights['E2'])])
+        all_trips = len(zone_centroids_BnG)
+        diff = str(all_trips - short_enough_trips)
+
+
+        LOG.info("Removing "+str(diff)+" trips for being too far.\n\nLeaving: "+str(short_enough_trips)+' trips remaining.')
+        zone_centroids_BnG = zone_centroids_BnG[zone_centroids_BnG['distances'] < filter_radius*LSOA_area_type_weights['E2']]
+
+        # At this point we have likely spent a long time compiling and computing the above distances. Let's save it in
+        # case of crashes etc, and then we can re-load the above if it has already been compiled.
+
+        # Save this as a csv. Tho it is a GeoDataFrame we no longer need spatial information here, only trip distances.
+        compiled_zone_centroids_path = os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv')
+
+        print('\nSaving compiled zone_centroids_BnG file as csv to:\n\n', compiled_zone_centroids_path, '\n')
+
+        zone_centroids_BnG = zone_centroids_BnG[["Origins", "Destinations", "OD_pairs", centroids_columns.name,
+                                                 centroids_columns.system, 'distances']]
+
+        zone_centroids_BnG.to_csv(compiled_zone_centroids_path)
+
+    elif (filter_radius != 0) & (os.path.isfile(compiled_centroids_path) is True):  # compiled centroids has been found
+        # File already exists, so load
+        compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
+        zone_centroids_BnG = pd.read_csv(compiled_centroids_path)
+        print('Existing compiled zone_centroids file found. Loading the \n', compiled_centroids_path)
+        print('Existing compiled zone_centroids file found. Loading the DataFrame\n', compiled_centroids_path)
+
+    params = []
+    if filter_radius == 0:
+        # No filter radius applied - carry on as normal.
         for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
             if o == d:
                 continue
-            origins.append(o)
-            destinations.append(d)
-            OD_pairs.append('_'.join((str(o), str(d))))
-        
-        # DF of all OD pairs
-        OD_pairs = gpd.GeoDataFrame(data={"Origins": origins,
-                                          "Destinations": destinations,
-                                          "OD_pairs": OD_pairs})
-        
-        # Test print statements - checking that zone_centroids indeed does contain 'geometry'
-        print("\nPrint statement of zone_centroids data types:\n", zone_centroids.dtypes)
-        print("\n","geometry" in zone_centroids, "Boolean check - Is 'geometry' %in% zone_centroids?\n\n")
-        
-        # Join on zone centroid data - Origins
-        OD_pairs.merge(how="left",
-                       right=zone_centroids.geometry,
-                       left_on="Origins",
-                       right_on=zone_centroids.index)
 
-        OD_pairs.rename(columns={"geometry":"Origin_centroids"},
-                        inplace=True)
-
-        # Join on zone centroids - Destinations
-        OD_pairs.merge(how="left",
-                       right=zone_centroids.geometry,
-                       left_on="Destinations",
-                       right_on=zone_centroids.index)
-
-        OD_pairs.rename(columns={"geometry":"Destination_centroids"},
-                        inplace=True)
-
-        # Work out distance between all OD pairs
-        OD_pairs['distances'] = OD_pairs.apply(
-            lambda row: row["Origin_centroids"].distance(row["Destination_centroids"]),
-            axis=1)
-
-    params = []
-    for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
-        if o == d:
-            continue
-
-        # Check if od journey exceeds maximum distance
-        if filter_radius != 0:
-            od_code = '_'.join(str(o), str(d))
-            od_distance = OD_pairs[OD_pairs["OD_pairs"] == od_code]["distances"].values[0]
-            if od_distance > filter_radius:
-                continue
-
-        params.append(
-            CalculationParameters(
-                server_url=settings.server_url,
-                modes=[str(m) for m in settings.modes],
-                datetime=settings.datetime,
-                origin=row_to_place(zone_centroids.loc[o]),
-                destination=row_to_place(zone_centroids.loc[d]),
-                arrive_by=settings.arrive_by,
-                searchWindow=settings.search_window_seconds,
-                wheelchair=settings.wheelchair,
-                max_walk_distance=settings.max_walk_distance,
+            params.append(
+                CalculationParameters(
+                    server_url=settings.server_url,
+                    modes=[str(m) for m in settings.modes],
+                    datetime=settings.datetime,
+                    origin=row_to_place(zone_centroids.loc[o]),
+                    destination=row_to_place(zone_centroids.loc[d]),
+                    arrive_by=settings.arrive_by,
+                    searchWindow=settings.search_window_seconds,
+                    wheelchair=settings.wheelchair,
+                    max_walk_distance=settings.max_walk_distance,
+                )
             )
-        )
 
-    return params
+        return params
+
+    LOG.info("Assessing if trips are too far based on Rural Urban Classifications.")
+
+    too_far_destinations = 0
+    if filter_radius != 0:
+        # Filter radius has been applied - use compiled GDF from above
+        #TODO: replace itertools.product with zip BnG ids
+        compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
+        zone_centroids_BnG = pd.read_csv(compiled_centroids_path)
+        print('\nTrips to assess:', len(zone_centroids_BnG))
+
+        zone_distances = zone_centroids_BnG.copy()
+        # Create DF of journey distances with OD_pairs as index to apply .loc[] with OD_pairs
+        zone_distances.set_index('OD_pairs', inplace=True)
+
+        for o, d in tqdm.tqdm(zip(zone_centroids_BnG['Origins'], zone_centroids_BnG['Destinations'])):
+
+            # Check if OD journey exceeds maximum distance with RUC weightings applied
+            if filter_radius != 0:
+                od_code = '_'.join((str(o), str(d)))
+
+                od_distance = zone_distances.loc[od_code]['distances']
+                # Check area type of origin zone - apply extra radius weighting if origin is rural
+                radius_weight = LSOA_area_type_weights[LSOA_area_types.loc[o]['RUC11CD']]
+
+                if od_distance > (filter_radius * radius_weight):
+                    too_far_destinations += 1
+                    continue
+
+            params.append(
+                CalculationParameters(
+                    server_url=settings.server_url,
+                    modes=[str(m) for m in settings.modes],
+                    datetime=settings.datetime,
+                    origin=row_to_place(zone_centroids.loc[o]),
+                    destination=row_to_place(zone_centroids.loc[d]),
+                    arrive_by=settings.arrive_by,
+                    searchWindow=settings.search_window_seconds,
+                    wheelchair=settings.wheelchair,
+                    max_walk_distance=settings.max_walk_distance,
+                )
+            )
+
+        LOG.info('Additional: '+str(too_far_destinations)+' journeys removed for being too far based on RUCs.')
+        LOG.info('Requests will now be sent for '+str(len(params))+' journeys.')
+        return params
 
 
 def calculate_costs(
