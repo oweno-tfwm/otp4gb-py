@@ -127,7 +127,7 @@ for a, b, c in zip(a2_jt_os, a2_jt_ds, a2_jts):
 a2_jt = pd.DataFrame(data = df_data,
                      columns = ['Origin', 'Destination', 'JT'])
 
-a2_jt['JT_mins'] = a2_jt['JT']/60#
+a2_jt['JT_mins'] = a2_jt['JT']/60
 
 # Save data
 a2_jt.to_csv(r'Y:\PBA\Analysis\a2_jt.csv',
