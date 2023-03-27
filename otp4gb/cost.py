@@ -108,7 +108,7 @@ def build_calculation_parameters(
     """
     #### LSOA TRSE ####
     # TODO: Move this to a config file as optional parameter
-    filter_radius = 12500  # metres (0 if not required)
+    filter_radius = 24150  # metres (0 if not required) (15 miles)
 
     def row_to_place(row: pd.Series) -> routing.Place:
         return routing.Place(
@@ -125,6 +125,7 @@ def build_calculation_parameters(
     ]
     #print('zone_centroids:', zone_centroids)
     print("\n LSOA analysis maximum radius:", str(filter_radius))
+    print(len(zone_centroids))
 
     # Load LSOA relevance and area type lookup file
     import os
