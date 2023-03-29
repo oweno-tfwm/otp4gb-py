@@ -25,8 +25,11 @@ LSOAs = gpd.read_file(os.path.join(LSOA_dir, LSOA_fn))
 LSOAs = LSOAs.to_crs('EPSG:4326')
 
 # Create centroids from boundaries file
-LSOAs['centroids'] = LSOAs['geometry'].centroid
+LSOAs['centroids'] = LSOAs.to_crs('+proj=cea')['geometry'].centroid.to_crs(LSOAs.crs)
+
+# Create LAT_LONG coordiuinate column
 LSOAs['LAT_LONG'] = LSOAs[['LONG', 'LAT']].apply(shapely.geometry.Point, axis=1)
+
 
 
 # File format for centroids.csv for OTP4GB-py. 

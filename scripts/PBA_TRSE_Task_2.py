@@ -74,6 +74,10 @@ base_rail_fn = 'NoRMS_JT_IGU_2018.csv'
 # Load the rail JT data
 rail_jt = pd.read_csv(os.path.join(rail_dir, base_rail_fn))
 
+# Rail JTs contain info for pairs where o==d. For our TRSE analysis we want 
+#   journeys that require train travel. Hence, remove inter-zone trips
+rail_jt_test = rail_jt[rail_jt['o'] != rail_jt['d']].copy()
+
 #### Pre-Processing ####
 
 # Remove NaN values from the dataframe, based on `number_itineraries`
@@ -189,6 +193,7 @@ for origin_id in tqdm.tqdm(list(a1_jts['Origin'].unique())):
     # Re-formatting 
     trips_2 = trips_2[['Origin', 'Destination', 'JT', 'JT_mins',
                    'a1_D_NoRMS_ID', 'd', 'jt']]
+    
     trips_2.rename(columns={'JT':'a1_JT',
                             'JT_mins':'a1_JT_mins',
                             'Origin':'a1_Origin',
@@ -218,6 +223,7 @@ for origin_id in tqdm.tqdm(list(a1_jts['Origin'].unique())):
     # Calculate corrected JTs for potential trips
     sin_corrected_jts = [] 
     for a1_jt, a2_jt, NoRMS_jt in zip(trips_3['a1_JT_mins'], trips_3['a2_JT_mins'], trips_3['a1_a2_NoRMS_jt']):
+       
         sin_corrected_jts.append( jt_correction(a1_jt, a2_jt, NoRMS_jt, step_size) )
     
     # Add sin corrected JTs
