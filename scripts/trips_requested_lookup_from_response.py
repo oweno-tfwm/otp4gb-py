@@ -22,13 +22,19 @@ import pandas as pd
 
 # Load response matrices
 # Load semi-complete final north run, with complete amenities list. 
-final_run_response_path = r'D:\Repositories\otp4gb-py\outputs_north_run_final\costs\AM\BUS_WALK_costs_20230608T0900_METRICS_FILE.csv'
-final_run_response_matrix = pd.read_csv(final_run_response_path)
+#final_run_response_path = r'D:\Repositories\otp4gb-py\outputs_north_run_final\costs\AM\BUS_WALK_costs_20230608T0900_METRICS_FILE.csv'
+#final_run_response_matrix = pd.read_csv(final_run_response_path)
+# Load penultimate north run 
+pen_run_response_path = r'D:\Repositories\otp4gb-py\outputs_rest_of_north\costs\AM\BUS_WALK_costs_20230608T0900-metrics.csv'
+pen_run_response_matrix = pd.read_csv(pen_run_response_path)
+
+final_run_response_matrix = pen_run_response_matrix
+
 # Load complete north run 2 (over weekend on Signalis, only 3 amenities)
 north_run2_response_path = r'E:\outputs_north_run_2\costs\AM\BUS_WALK_costs_20230608T0900_METRICS_FILE_north_2_signalis.csv'
 north_run2_response_matrix = pd.read_csv(north_run2_response_path)
 # Load complete Greater Manchester run, with complete amenities list. 
-GM_authority_test_path = r'D:\Repositories\otp4gb-py\GM_test\costs\AM\'
+GM_authority_test_path = r'D:\Repositories\otp4gb-py\GM_test\costs\AM\BUS_WALK_costs_20230608T0900-metrics.csv'
 GM_authority_test_matrix = pd.read_csv(GM_authority_test_path)
 
 
@@ -67,8 +73,8 @@ compiled_response_matrix.rename(columns={'origin_id':'o',
                                          'destination_id':'d'},
                                 inplace=True)
 # Export data .
-response_matrix.to_csv(r'E:\OTP_Processing\OTP outputs\first_north_run\costs\AM\first_run_trip_reqs.csv',
-                       index = False)
+compiled_response_matrix.to_csv(r'D:\Repositories\otp4gb-py\final_debug_run\for_FINAL_run_run_trip_reqs.csv',
+                                index = False)
 
 
 
