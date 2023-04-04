@@ -66,22 +66,22 @@ Create a column of OD pair codes (format "O_D") used as identifiers for unique
     min_duration column. The resultant matrix is tall possible unique trips 
     from the OTP response data with minimum JTs (minutes) appended
 '''
+
 # Create OD code column
 response_data['OD_code'] = response_data['origin_id'] + '_' + response_data['destination_id']
 
 # Use mean_duration data where `min_duration` is NaN (only one trip found)
 response_data.loc[response_data['min_duration'].isnull(), 'min_duration'] = response_data['mean_duration']
 
-# Group data by OD_code, leaving the best jt for every possible OD_code trip
+# Group data by OD_code, leaving the best (min) jt for every possible OD_code trip
 grouped_responses = response_data.groupby('OD_code').agg({'min_duration': 'min'})
 
 # Re-append Origin & Destination info
 grouped_responses['od_code'] = grouped_responses.index
-
 grouped_responses[['o', 'd']] = grouped_responses['od_code'].str.split('_', 
                                                                        expand=True)
 
-# JTs currently in seconds, convert to minutes
+# OTP JTs currently in seconds, convert to minutes
 grouped_responses['jt(mins)'] = grouped_responses['min_duration']/60
 
 
