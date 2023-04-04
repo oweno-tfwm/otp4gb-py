@@ -10,7 +10,13 @@ Inputs:
     OTP response data
     
 Outputs: 
-    Improved bus jt matrix at LSOA level for the North. 
+    Improved bus jt matrix at LSOA level for the North.
+    
+    
+Before running this script, ensure the following are updated: 
+
+    L34 - OTP response file path
+    L63 - Results save path
 """
 
 
@@ -23,8 +29,8 @@ from math import isnan
 
 #### Data #### 
 # Load response data
-response_dir = r'D:\Repositories\otp4gb-py\outputs_north_run_final\costs\AM'
-response_fn = 'BUS_WALK_costs_20230608T0900_METRICS_FILE.csv'
+response_dir = r'D:\Repositories\otp4gb-py\outputs_rest_of_north\costs\AM'
+response_fn = 'BUS_WALK_costs_20230608T0900-metrics.csv'
 
 response_data = pd.read_csv(os.path.join(response_dir, 
                                          response_fn))
@@ -74,5 +80,5 @@ for o_id in tqdm.tqdm(origins):
 bus_jt_matrix = pd.DataFrame(data=results_data,
                              columns = ['o','d','jt(mins)'])
 
-bus_jt_matrix.to_csv(r'Y:\PBA\Analysis\Data(copy)\OTP data\north_run_final(so_far)_bus_jt_matrix.csv',
+bus_jt_matrix.to_csv(r'Y:\PBA\Analysis\Data(copy)\OTP data\rest_of_north(pen_run)_bus_jt_matrix.csv',
                      index=False)
