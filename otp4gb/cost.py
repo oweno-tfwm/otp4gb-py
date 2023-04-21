@@ -12,6 +12,7 @@ import itertools
 import logging
 import pathlib
 import threading
+import os
 from typing import Any, NamedTuple, Optional
 
 # Third party imports
@@ -27,6 +28,7 @@ from otp4gb import routing, util, centroids
 
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
+
 
 ##### CLASSES #####
 class CostSettings(NamedTuple):
@@ -106,9 +108,10 @@ def build_calculation_parameters(
     list[CalculationParameters]
         Parameters to run `calculate_costs`.
     """
+
     #### LSOA TRSE ####
     # TODO: Move this to a config file as optional parameter
-    filter_radius = 24150  # metres (0 if not required) (15 miles)
+    filter_radius = 24150  # metres(15 miles) - set to 0 if not required
 
     def row_to_place(row: pd.Series) -> routing.Place:
         return routing.Place(
@@ -123,35 +126,35 @@ def build_calculation_parameters(
     zone_centroids = zone_centroids.set_index(centroids_columns.id)[
         [centroids_columns.name, centroids_columns.system, "geometry"]
     ]
-    #print('zone_centroids:', zone_centroids)
-    print("\n LSOA analysis maximum radius:", str(filter_radius))
+
+    # Print statistics for user
+    print("\n LSOA analysis maximum radius filter:", str(filter_radius))
     print(len(zone_centroids))
 
-    # Load LSOA relevance and area type lookup file
-    import os
+    # Load LSOA relevance and Rural Urban Classification (RUC) lookup file
     LSOA_relevance_path = os.path.join(os.getcwd(), 'Data', 'LSOA_amenities.csv')
-    LSOA_area_path = os.path.join(os.getcwd(), 'Data', 'compiled_LSOA_area_types.csv')
+    LSOA_RUC_path = os.path.join(os.getcwd(), 'Data', 'compiled_LSOA_area_types.csv')
     LSOA_relevance = pd.read_csv(LSOA_relevance_path)
-    LSOA_area_types = pd.read_csv(LSOA_area_path)
+    LSOA_RUC_types = pd.read_csv(LSOA_RUC_path)
 
     # Set zone id's as index, matching `zone_centroids`
     LSOA_relevance.set_index('LSOA11CD', inplace=True)
-    LSOA_area_types.set_index('LSOA11CD', inplace=True)
+    LSOA_RUC_types.set_index('LSOA11CD', inplace=True)
 
+    # Path to compiled zone centroids (within Data folder)
     compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
 
-    #TODO: find "area_type" and convert to "RUC" (Rural Urban Classification) as these are not area_types.
-    # Rural weighting for Origin LSOAs
-    LSOA_area_type_weights = {'A1': 1,
-                              'B1': 1,
-                              'C1': 1,
-                              'C2': 1,
-                              'D1': 1.25,
-                              'D2': 1.25,
-                              'E1': 1.5,
-                              'E2': 1.5}
+    # Define RUC weightings to be applied to maximum radius filter based on Zone origin RUC
+    LSOA_RUC_weights = {'A1': 1,
+                        'B1': 1,
+                        'C1': 1,
+                        'C2': 1,
+                        'D1': 1.25,
+                        'D2': 1.25,
+                        'E1': 1.5,
+                        'E2': 1.5}
 
-    # Create GeoDataFrame of all OD pairs & work out distance between them.
+    # Create GeoDataFrame of all OD pairs & calculate distances between them.
     if (filter_radius != 0) & (os.path.isfile(compiled_centroids_path) is False):
 
         print('\nA zone centroids file named "compiled_zone_centroids_with_filter.csv" could not be found.')
@@ -172,19 +175,19 @@ def build_calculation_parameters(
                                 inplace=True)
 
         # Create a DataFrame of all possible OD combinations:
-
         origins = []
         destinations = []
         OD_pairs = []
-        LOG.info("Constructing distance GDF and assessing relevant Destination zones")
+        LOG.info("Constructing trip distance GeoDataFrame and assessing relevant destination zones")
         LSOA_ids = list(zone_centroids.index)
 
         # Create possible combinations
         length = 2  # An Origin & Destination
-        x = list(range(len(zone_centroids)))  # Possible Origins or Destinations
+        x = list(range(len(zone_centroids)))  # Possible Origins and Destinations
         mesh = np.meshgrid(*([x] * length))
         result = np.vstack([y.flat for y in mesh]).T
 
+        # Now, filter out irrelevant trips from total trips above.
         print('\nAnalysing', len(result), 'initial trips for destination relevance & same zone journeys.\n')
 
         for i in tqdm.tqdm(zip(result)):
@@ -197,6 +200,7 @@ def build_calculation_parameters(
 
             # Check for relevance of Destination LSOA
             if LSOA_relevance.loc[LSOA_ids[d]]['totals'] > 0:
+                # Destination LSOA contains at least 1 amenity, ergo is relevant
                 origin = LSOA_ids[o]
                 destin = LSOA_ids[d]
 
@@ -249,7 +253,8 @@ def build_calculation_parameters(
 
         LOG.info("Calculating journey distances")
         # Work out distance between all OD pairs
-        zone_centroids_BnG['distances'] = zone_centroids_BnG['Origin_centroids'].distance(zone_centroids_BnG['Destination_centroids'])
+        zone_centroids_BnG['distances'] = zone_centroids_BnG['Origin_centroids'].distance(
+            zone_centroids_BnG['Destination_centroids'])
 
         # Print run stats for user
         print('\nMaximum trip distance:', str(max(zone_centroids_BnG['distances'])),
@@ -257,18 +262,19 @@ def build_calculation_parameters(
 
         # Short enough trips are the number of trips within the specified filter radius with Rural weighting applied
         # to the filter distance. Any trip distance greater than this can now be removed.
-        short_enough_trips = len(zone_centroids_BnG[zone_centroids_BnG['distances'] < (filter_radius*LSOA_area_type_weights['E2'])])
+        short_enough_trips = len(zone_centroids_BnG[zone_centroids_BnG['distances'] <
+                                                    (filter_radius*LSOA_RUC_weights['E2'])])
         all_trips = len(zone_centroids_BnG)
         diff = str(all_trips - short_enough_trips)
 
+        LOG.info("Removing "+str(diff)+" trips for being too far")
+        LOG.info("Leaving: "+str(short_enough_trips)+" trips remaining.")
+        zone_centroids_BnG = zone_centroids_BnG[zone_centroids_BnG['distances'] < filter_radius*LSOA_RUC_weights['E2']]
 
-        LOG.info("Removing "+str(diff)+" trips for being too far.\n\nLeaving: "+str(short_enough_trips)+' trips remaining.')
-        zone_centroids_BnG = zone_centroids_BnG[zone_centroids_BnG['distances'] < filter_radius*LSOA_area_type_weights['E2']]
+        # Likely spent a long time compiling and computing the above distances. Save it in case of crashes.
+        # Can re-load above if it has already been compiled.
 
-        # At this point we have likely spent a long time compiling and computing the above distances. Let's save it in
-        # case of crashes etc, and then we can re-load the above if it has already been compiled.
-
-        # Save this as a csv. Tho it is a GeoDataFrame we no longer need spatial information here, only trip distances.
+        # Save this as a .csv, although it is a GeoDataFrame, no longer need spatial information, only trip distances.
         compiled_zone_centroids_path = os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv')
 
         print('\nSaving compiled zone_centroids_BnG file as csv to:\n\n', compiled_zone_centroids_path, '\n')
@@ -279,7 +285,7 @@ def build_calculation_parameters(
         zone_centroids_BnG.to_csv(compiled_zone_centroids_path)
 
     elif (filter_radius != 0) & (os.path.isfile(compiled_centroids_path) is True):  # compiled centroids has been found
-        # File already exists, so load
+        # File already exists, load it.
         compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
         zone_centroids_BnG = pd.read_csv(compiled_centroids_path)
         print('Existing compiled zone_centroids file found. Loading the \n', compiled_centroids_path)
@@ -309,7 +315,13 @@ def build_calculation_parameters(
         return params
 
     LOG.info("Assessing if trips are too far based on Rural Urban Classifications.")
+    
+    # Load & format trips requested lookup
+    trips_requested = pd.read_csv(r'D:\Repositories\otp4gb-py\debug_run_redo\RERUN_for_FINAL_run_trip_reqs.csv')
+    # set OD_code as index
+    trips_requested.set_index('od_code', inplace=True, drop=True)
 
+    already_requested = 0 
     too_far_destinations = 0
     if filter_radius != 0:
         # Filter radius has been applied - use compiled GDF from above
@@ -327,10 +339,15 @@ def build_calculation_parameters(
             # Check if OD journey exceeds maximum distance with RUC weightings applied
             if filter_radius != 0:
                 od_code = '_'.join((str(o), str(d)))
-
+                
+                if od_code in trips_requested.index:
+                    # Trip has been requested in previous run. Skip.
+                    already_requested += 1
+                    continue
+                
                 od_distance = zone_distances.loc[od_code]['distances']
                 # Check area type of origin zone - apply extra radius weighting if origin is rural
-                radius_weight = LSOA_area_type_weights[LSOA_area_types.loc[o]['RUC11CD']]
+                radius_weight = LSOA_RUC_weights[LSOA_RUC_types.loc[o]['RUC11CD']]
 
                 if od_distance > (filter_radius * radius_weight):
                     too_far_destinations += 1
@@ -351,6 +368,7 @@ def build_calculation_parameters(
             )
 
         LOG.info('Additional: '+str(too_far_destinations)+' journeys removed for being too far based on RUCs.')
+        LOG.info('With a further: '+str(already_requested)+' journeys removed for having already been requested.')
         LOG.info('Requests will now be sent for '+str(len(params))+' journeys.')
         return params
 
