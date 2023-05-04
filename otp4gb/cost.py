@@ -34,6 +34,7 @@ LOG = logging.getLogger(__name__)
 output_dir_path = os.path.abspath(base_sys.argv[1])
 output_dir_name = os.path.basename(output_dir_path)
 
+
 ##### CLASSES #####
 class CostSettings(NamedTuple):
     """Settings for the OTP routing."""
@@ -117,8 +118,7 @@ def build_calculation_parameters(
     """
 
     #### LSOA TRSE ####
-    # TODO: Move this to a config file as optional parameter
-    filter_radius = crowfly_max_distance  # crowfly_mac_distance specified within config.yml
+    filter_radius = crowfly_max_distance  # crowfly_max_distance specified within config.yml
 
     def row_to_place(row: pd.Series) -> routing.Place:
         return routing.Place(
@@ -300,12 +300,14 @@ def build_calculation_parameters(
         # File already exists, load it.
         #compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
         zone_centroids_BnG = pd.read_csv(compiled_centroids_path)
-        print('Existing compiled_zone_centroids file found. Loading the DataFrame\n', compiled_centroids_path)
+        print('Existing compiled_zone_centroids file found. Loading the DataFrame\n', compiled_centroids_path, "\n")
 
     params = []
     if filter_radius == 0:
         # No filter radius applied - carry on as normal.
-        for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
+        LOG.info("No maximum crowfly trip distance applied - proceeding as normal")
+        #for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
+        for o, d in tqdm.tqdm(itertools.product(zone_centroids.index, zone_centroids.index)):
             if o == d:
                 continue
 
@@ -341,8 +343,8 @@ def build_calculation_parameters(
     already_requested = 0 
     too_far_destinations = 0
     if filter_radius != 0:
+
         # Filter radius has been applied - use compiled GDF from above
-        #TODO: replace itertools.product with zip BnG ids
         compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
         zone_centroids_BnG = pd.read_csv(compiled_centroids_path)
         print('\nTrips to assess:', len(zone_centroids_BnG))
