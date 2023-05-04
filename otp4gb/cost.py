@@ -5,6 +5,7 @@
 
 ##### IMPORTS #####
 # Standard imports
+import sys as base_sys
 import datetime
 import enum
 import io
@@ -29,6 +30,9 @@ from otp4gb import routing, util, centroids
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
 
+# Name & Path to current run output folder to save compiled zone centroids
+output_dir_path = os.path.abspath(base_sys.argv[1])
+output_dir_name = os.path.basename(output_dir_path)
 
 ##### CLASSES #####
 class CostSettings(NamedTuple):
@@ -41,6 +45,7 @@ class CostSettings(NamedTuple):
     search_window_seconds: Optional[int] = None
     wheelchair: bool = False
     max_walk_distance: float = 1000
+    crowfly_max_distance: Optional[float] = None
 
 
 class CalculationParameters(NamedTuple):
@@ -55,6 +60,7 @@ class CalculationParameters(NamedTuple):
     searchWindow: Optional[int] = None
     wheelchair: bool = False
     max_walk_distance: float = 1000
+    crowfly_max_distance: Optional[float] = None
 
 
 class CostResults(pydantic.BaseModel):
@@ -90,6 +96,7 @@ def build_calculation_parameters(
     zone_centroids: gpd.GeoDataFrame,
     centroids_columns: centroids.ZoneCentroidColumns,
     settings: CostSettings,
+    crowfly_max_distance: Optional[float] = None
 ) -> list[CalculationParameters]:
     global zone_centroids_BnG
     """Build a list of parameters for running `calculate_costs`.
@@ -111,7 +118,7 @@ def build_calculation_parameters(
 
     #### LSOA TRSE ####
     # TODO: Move this to a config file as optional parameter
-    filter_radius = 24150  # metres(15 miles) - set to 0 if not required
+    filter_radius = crowfly_max_distance  # crowfly_mac_distance specified within config.yml
 
     def row_to_place(row: pd.Series) -> routing.Place:
         return routing.Place(
@@ -128,21 +135,20 @@ def build_calculation_parameters(
     ]
 
     # Print statistics for user
-    print("\n LSOA analysis maximum radius filter:", str(filter_radius))
-    print(len(zone_centroids))
+    print("\nLSOA analysis maximum crow fly trip distance: {}".format(filter_radius))
 
-    # Load LSOA relevance and Rural Urban Classification (RUC) lookup file
-    LSOA_relevance_path = os.path.join(os.getcwd(), 'Data', 'LSOA_amenities.csv')
+    # Load LSOA destination relevance and Rural Urban Classification (RUC) lookups
+    LSOA_relevance_path = os.path.join(os.getcwd(), "Data", "LSOA_amenities.csv")
     LSOA_RUC_path = os.path.join(os.getcwd(), 'Data', 'compiled_LSOA_area_types.csv')
     LSOA_relevance = pd.read_csv(LSOA_relevance_path)
     LSOA_RUC_types = pd.read_csv(LSOA_RUC_path)
 
     # Set zone id's as index, matching `zone_centroids`
-    LSOA_relevance.set_index('LSOA11CD', inplace=True)
-    LSOA_RUC_types.set_index('LSOA11CD', inplace=True)
+    LSOA_relevance.set_index("LSOA11CD", inplace=True)
+    LSOA_RUC_types.set_index("LSOA11CD", inplace=True)
 
     # Path to compiled zone centroids (within Data folder)
-    compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
+    compiled_centroids_path = (os.path.join(os.getcwd(), output_dir_name, 'compiled_zone_centroids_with_filter.csv'))
 
     # Define RUC weightings to be applied to maximum radius filter based on Zone origin RUC
     LSOA_RUC_weights = {'A1': 1,
@@ -157,8 +163,9 @@ def build_calculation_parameters(
     # Create GeoDataFrame of all OD pairs & calculate distances between them.
     if (filter_radius != 0) & (os.path.isfile(compiled_centroids_path) is False):
 
-        print('\nA zone centroids file named "compiled_zone_centroids_with_filter.csv" could not be found.')
-        print('Creating `compiled_zone_centroids_with_filter.csv` now.')
+        print("\nA zone centroids file `compiled_zone_centroids_with_filter.csv` could not be found in directory",
+              output_dir_name)
+        print("Creating `compiled_zone_centroids_with_filter.csv` now.\n")
 
         # Create copy of zone_centroids to manipulate CRS (filter distance is metres (EPSG:27700))
         zone_centroids_BnG = zone_centroids.copy()
@@ -181,13 +188,13 @@ def build_calculation_parameters(
         LOG.info("Constructing trip distance GeoDataFrame and assessing relevant destination zones")
         LSOA_ids = list(zone_centroids.index)
 
-        # Create possible combinations
+        # Create possible combinations (trips)
         length = 2  # An Origin & Destination
         x = list(range(len(zone_centroids)))  # Possible Origins and Destinations
         mesh = np.meshgrid(*([x] * length))
         result = np.vstack([y.flat for y in mesh]).T
 
-        # Now, filter out irrelevant trips from total trips above.
+        # Filter out irrelevant trips from total trips above.
         print('\nAnalysing', len(result), 'initial trips for destination relevance & same zone journeys.\n')
 
         for i in tqdm.tqdm(zip(result)):
@@ -210,9 +217,12 @@ def build_calculation_parameters(
             else:
                 # Destination LSOA is not relevant
                 continue
-        LOG.info("Removing: "+str((len(result) - len(origins)))+" trips, leaving: "+str(len(origins))+' trips remaining.\n')
 
-        LOG.info("Constructing Data Frame")
+        LOG.info("Removing: %s trips, leaving: %s trips remaining.",
+                 str((len(result) - len(origins))),
+                 str(len(origins)))
+
+        LOG.info("Constructing DataFrame of trips")
         # DF of all OD pairs
         OD_pairs = pd.DataFrame(data={'Origins': origins,
                                       'Destinations': destinations,
@@ -251,14 +261,16 @@ def build_calculation_parameters(
         zone_centroids_BnG.rename(columns={'geometry': 'Destination_centroids'},
                                   inplace=True)
 
-        LOG.info("Calculating journey distances")
+        LOG.info("Calculating trip distances")
         # Work out distance between all OD pairs
         zone_centroids_BnG['distances'] = zone_centroids_BnG['Origin_centroids'].distance(
             zone_centroids_BnG['Destination_centroids'])
 
         # Print run stats for user
-        print('\nMaximum trip distance:', str(max(zone_centroids_BnG['distances'])),
-              '\nMinimum trip distance:', str(min(zone_centroids_BnG['distances'])), '\n')
+        print("\nMaximum trip distance: {} \nMinimum trip distance: {}\n".format(
+            str(round(max(zone_centroids_BnG['distances']), 2)) + " metres.",
+            str(round(min(zone_centroids_BnG['distances']), 2)) + " metres."
+        ))
 
         # Short enough trips are the number of trips within the specified filter radius with Rural weighting applied
         # to the filter distance. Any trip distance greater than this can now be removed.
@@ -274,22 +286,21 @@ def build_calculation_parameters(
         # Likely spent a long time compiling and computing the above distances. Save it in case of crashes.
         # Can re-load above if it has already been compiled.
 
-        # Save this as a .csv, although it is a GeoDataFrame, no longer need spatial information, only trip distances.
-        compiled_zone_centroids_path = os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv')
+        # Save as .csv. Although a GeoDataFrame, we no longer require spatial information - only trip distances.
+        #compiled_zone_centroids_path = os.path.join(os.getcwd(), compiled_centroids_path)
 
-        print('\nSaving compiled zone_centroids_BnG file as csv to:\n\n', compiled_zone_centroids_path, '\n')
+        print('\nSaving compiled zone_centroids_BnG file as csv to:\n    ', compiled_centroids_path, '\n')
 
         zone_centroids_BnG = zone_centroids_BnG[["Origins", "Destinations", "OD_pairs", centroids_columns.name,
                                                  centroids_columns.system, 'distances']]
 
-        zone_centroids_BnG.to_csv(compiled_zone_centroids_path)
+        zone_centroids_BnG.to_csv(compiled_centroids_path)
 
     elif (filter_radius != 0) & (os.path.isfile(compiled_centroids_path) is True):  # compiled centroids has been found
         # File already exists, load it.
-        compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
+        #compiled_centroids_path = (os.path.join(os.getcwd(), 'Data', 'compiled_zone_centroids_with_filter.csv'))
         zone_centroids_BnG = pd.read_csv(compiled_centroids_path)
-        print('Existing compiled zone_centroids file found. Loading the \n', compiled_centroids_path)
-        print('Existing compiled zone_centroids file found. Loading the DataFrame\n', compiled_centroids_path)
+        print('Existing compiled_zone_centroids file found. Loading the DataFrame\n', compiled_centroids_path)
 
     params = []
     if filter_radius == 0:
@@ -317,9 +328,15 @@ def build_calculation_parameters(
     LOG.info("Assessing if trips are too far based on Rural Urban Classifications.")
     
     # Load & format trips requested lookup
-    trips_requested = pd.read_csv(r'D:\Repositories\otp4gb-py\debug_run_redo\RERUN_for_FINAL_run_trip_reqs.csv')
-    # set OD_code as index
-    trips_requested.set_index('od_code', inplace=True, drop=True)
+    try:
+        trips_requested = pd.read_csv(os.path.join(output_dir_path, "trips_previously_requested.csv"))
+
+        # set OD_code as index
+        trips_requested.set_index('od_code', inplace=True, drop=True)
+    except FileNotFoundError:
+        print("\nA file `{}/trips_previously_requested.csv` could not be located.".format(output_dir_name),
+              "\nThus, assessing all found trips")
+        trips_requested_file = False
 
     already_requested = 0 
     too_far_destinations = 0
@@ -340,11 +357,12 @@ def build_calculation_parameters(
             if filter_radius != 0:
                 od_code = '_'.join((str(o), str(d)))
                 
-                if od_code in trips_requested.index:
-                    # Trip has been requested in previous run. Skip.
-                    already_requested += 1
-                    continue
-                
+                if trips_requested_file:
+                    if od_code in trips_requested.index:
+                        # Trip has been requested in previous run. Skip.
+                        already_requested += 1
+                        continue
+
                 od_distance = zone_distances.loc[od_code]['distances']
                 # Check area type of origin zone - apply extra radius weighting if origin is rural
                 radius_weight = LSOA_RUC_weights[LSOA_RUC_types.loc[o]['RUC11CD']]
@@ -352,6 +370,16 @@ def build_calculation_parameters(
                 if od_distance > (filter_radius * radius_weight):
                     too_far_destinations += 1
                     continue
+
+            # DEBUGGING
+            # print("\nZoneCentroid length:", len(zone_centroids))
+            # print(zone_centroids.columns)
+            #
+            # import sys
+            # opt_base_folder = os.path.abspath(sys.argv[1])
+            #
+            # print("test folder", os.path.basename(opt_base_folder))
+            # END DEBUGGING
 
             params.append(
                 CalculationParameters(
@@ -578,11 +606,15 @@ def build_cost_matrix(
     generalised_cost_parameters: GeneralisedCostFactors,
     aggregation_method: AggregationMethod,
     workers: int = 0,
+    crowfly_max_distance: Optional[float] = None
 ) -> None:
     """Create cost matrix for all zone to zone pairs.
 
     Parameters
     ----------
+    crowfly_max_distance: Optional[float]
+        Maximum permissible crowflies trip distance (NOT on road network)
+        for each OD trip
     zone_centroids : gpd.GeoDataFrame
         Zones for the cost matrix.
     centroids_columns : centroids.ZoneCentroidColumns
@@ -600,7 +632,7 @@ def build_cost_matrix(
         Number of threads to create during calculations.
     """
     LOG.info("Calculating costs for %s with settings\n%s", matrix_file.name, settings)
-    jobs = build_calculation_parameters(zone_centroids, centroids_columns, settings)
+    jobs = build_calculation_parameters(zone_centroids, centroids_columns, settings, crowfly_max_distance)
 
     lock = threading.Lock()
     response_file = matrix_file.with_name(matrix_file.name + "-response_data.jsonl")

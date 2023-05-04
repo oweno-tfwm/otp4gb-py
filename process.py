@@ -8,7 +8,7 @@ import sys
 from shapely import geometry
 
 from otp4gb.centroids import load_centroids, ZoneCentroidColumns
-from otp4gb.config import ASSET_DIR, load_config
+from otp4gb.config import ASSET_DIR, load_config, ProcessConfig
 from otp4gb.logging import file_handler_factory, get_logger
 from otp4gb.otp import Server
 from otp4gb.util import Timer
@@ -53,7 +53,7 @@ def main():
         logger.info("Starting server")
         server.start()
 
-    # Load Northern MSOAs
+    # Load Northern Boundaries
     logger.info("Loading centroids")
     # TODO(MB) Read parameters for config to define column names
     centroids_columns = ZoneCentroidColumns()
@@ -96,6 +96,7 @@ def main():
                 arrive_by=True,
                 search_window_seconds=search_window_seconds,
                 max_walk_distance=config.max_walk_distance,
+                crowfly_max_distance=config.crowfly_max_distance
             )
 
             matrix_path = pathlib.Path(
@@ -113,6 +114,7 @@ def main():
                 config.generalised_cost_factors,
                 config.iterinary_aggregation_method,
                 config.number_of_threads,
+                config.crowfly_max_distance
             )
 
     # Stop OTP Server

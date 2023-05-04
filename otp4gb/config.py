@@ -22,8 +22,8 @@ ASSET_DIR = os.path.join(ROOT_DIR, "assets")
 LOG_DIR = os.path.join(ROOT_DIR, "logs")
 
 # if you're running on a virtual machine (no virtual memory/page disk) this must not exceed the total amount of RAM.
-PREPARE_MAX_HEAP = os.environ.get("PREPARE_MAX_HEAP", "20G")
-SERVER_MAX_HEAP = os.environ.get("SERVER_MAX_HEAP", "20G")
+PREPARE_MAX_HEAP = os.environ.get("PREPARE_MAX_HEAP", "25G")
+SERVER_MAX_HEAP = os.environ.get("SERVER_MAX_HEAP", "25G")
 LOG = logging.getLogger(__name__)
 
 
@@ -80,10 +80,8 @@ class ProcessConfig(BaseConfig):
     max_walk_distance: int = 2500
     number_of_threads: pydantic.conint(ge=0, le=10) = 0
     no_server: bool = False
+    crowfly_max_distance: Optional[float] = None
 
-    # Set maximum radius for TRSE LSOA analysis (set as int(0) if not required)
-    #filter_radius:int = 0 #metres
-    
     # Makes a classmethod not recognised by pylint, hence disabling self check
     @pydantic.validator("extents", pre=True)
     def _extents(cls, value):  # pylint: disable=no-self-argument
