@@ -306,7 +306,7 @@ def build_calculation_parameters(
     if filter_radius == 0:
         # No filter radius applied - carry on as normal.
         LOG.info("No maximum crowfly trip distance applied - proceeding as normal")
-        #for o, d in itertools.product(zone_centroids.index, zone_centroids.index):
+
         for o, d in tqdm.tqdm(itertools.product(zone_centroids.index, zone_centroids.index)):
             if o == d:
                 continue
