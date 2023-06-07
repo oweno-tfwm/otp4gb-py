@@ -10,7 +10,7 @@ import datetime
 import enum
 import logging
 import re
-from typing import Any, Optional, Union
+from typing import Any, Iterator, Optional, Union
 from urllib import parse
 
 # Third party imports
@@ -26,6 +26,7 @@ ROUTER_API_ROUTE = "otp/routers/default/plan"
 REQUEST_TIMEOUT = 5
 REQUEST_RETRIES = 10
 OTP_ERRORS = {"NO_TRANSIT": 406, "TOO_CLOSE": 409}
+
 
 ##### CLASSES #####
 class Mode(enum.StrEnum):
@@ -192,12 +193,14 @@ class RoutePlanResults(pydantic.BaseModel):
 
 
 @dataclasses.dataclass
-class _FakeResponse:
+class FakeResponse:
     """Storing data when request errors, within `get_route_itineraries`."""
 
     url: str
     status_code: int
-    reason: str
+    message: str
+    retry: int
+    text: str | None = None
 
 
 ##### FUNCTIONS #####
@@ -239,7 +242,9 @@ def get_route_itineraries(
         except requests.exceptions.RequestException as error:
             msg = f"{error.__class__.__name__}: {error}"
             add_error(msg)
-            response = _FakeResponse(url=prepared.url, status_code=-10, reason=msg)
+            response = FakeResponse(
+                url=prepared.url, status_code=-10, message=msg, retry=retries
+            )
 
         if response.status_code == requests.codes.OK:
             result = RoutePlanResults.parse_raw(response.text)
@@ -265,3 +270,43 @@ def get_route_itineraries(
             return response.url, result
 
         retries += 1
+
+
+def request(
+    url: str,
+    params: dict | None,
+    max_retries: int = REQUEST_RETRIES,
+    timeout: int = REQUEST_TIMEOUT,
+) -> Iterator[FakeResponse]:
+    retries = 0
+    while True:
+        req = requests.Request("GET", url, params=params)
+        prepared = req.prepare()
+
+        try:
+            session = requests.Session()
+            response = session.send(prepared, timeout=timeout)
+            response = FakeResponse(
+                url=response.url,
+                status_code=response.status_code,
+                message=f"Response {response.status_code}: {response.reason}",
+                retry=retries,
+                text=response,
+            )
+
+        except requests.exceptions.RequestException as error:
+            response = FakeResponse(
+                url=prepared.url,
+                status_code=-10,
+                reason=f"{error.__class__.__name__}: {error}",
+                retry=retries,
+            )
+
+        yield response
+
+        if retries > max_retries:
+            break
+
+        retries += 1
+
+    yield response
