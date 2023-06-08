@@ -1,9 +1,14 @@
+"""Run OTP4GB-py and produce cost matrices."""
+from __future__ import annotations
+
+import argparse
 import atexit
 import datetime
 import logging
-import os
 import pathlib
-import sys
+
+from pydantic import dataclasses
+import pydantic
 
 from otp4gb.centroids import load_centroids, ZoneCentroidColumns
 from otp4gb.config import ASSET_DIR, load_config
@@ -23,33 +28,65 @@ FILENAME_PATTERN = (
 )
 
 
+@dataclasses.dataclass
+class ProcessArgs:
+    """Arguments for process script.
+
+    Attributes
+    ----------
+    folder : pathlib.Path
+        Path to inputs directory.
+    save_parameters : bool, default False
+        If true saves build parameters and
+        exit.
+    """
+
+    folder: pydantic.DirectoryPath
+    save_parameters: bool = False
+
+    @classmethod
+    def parse(cls) -> ProcessArgs:
+        """Parse command line arguments."""
+        parser = argparse.ArgumentParser(
+            description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+        parser.add_argument(
+            "folder", type=pathlib.Path, help="folder containing config file and inputs"
+        )
+        parser.add_argument(
+            "-p",
+            "--save_parameters",
+            action="store_true",
+            help="save build parameters to JSON lines files and exit",
+        )
+
+        parsed_args = parser.parse_args()
+        return ProcessArgs(**vars(parsed_args))
+
+
 def main():
+    arguments = ProcessArgs.parse()
+
     _process_timer = Timer()
 
     @atexit.register
     def report_time():
         logger.info("Finished in %s", _process_timer)
 
-    try:
-        opt_base_folder = os.path.abspath(sys.argv[1])
-    except IndexError as error:
-        logger.error("No path provided")
-        raise ValueError("Base folder not provided") from error
-
     log_file = file_handler_factory(
-        "process.log", os.path.join(opt_base_folder, "logs")
+        f"process-{datetime.date.today():%Y%m%d}.log", arguments.folder / "logs"
     )
     logger.addHandler(log_file)
 
-    config = load_config(opt_base_folder)
+    config = load_config(arguments.folder)
 
-    # Start OTP Server
-    server = Server(opt_base_folder)
-    if not config.no_server:
+    server = Server(arguments.folder)
+    if arguments.save_parameters:
+        logger.info("Saving OTP request parameters without starting OTP")
+    elif not config.no_server:
         logger.info("Starting server")
         server.start()
 
-    # Load Northern Boundaries
     logger.info("Loading centroids")
     centroids = load_centroids(
         pathlib.Path(ASSET_DIR) / config.centroids,
@@ -59,10 +96,7 @@ def main():
         extents=config.extents,
     )
 
-    logger.info(
-        "Considering %d centroids",
-        len(centroids.origins),
-    )
+    logger.info("Considering %d centroids", len(centroids.origins))
 
     for time_period in config.time_periods:
         search_window_seconds = None
@@ -81,9 +115,6 @@ def main():
 
         for modes in config.modes:
             print()  # Empty line space in cmd window
-            logger.info(
-                "Calculating costs for %s - %s", time_period.name, ", ".join(modes)
-            )
             cost_settings = cost.CostSettings(
                 server_url="http://localhost:8080",
                 modes=modes,
@@ -94,10 +125,30 @@ def main():
                 crowfly_max_distance=config.crowfly_max_distance,
             )
 
-            matrix_path = pathlib.Path(
-                opt_base_folder
-            ) / "costs/{tp_name}/{modes}_costs_{dt:%Y%m%dT%H%M}.csv".format(
-                tp_name=time_period.name, modes="_".join(modes), dt=travel_datetime
+            if arguments.save_parameters:
+                logger.info(
+                    "Building parameters for %s - %s",
+                    time_period.name,
+                    ", ".join(modes),
+                )
+
+                parameters_path = arguments.folder / (
+                    f"parameters/{time_period.name}_{'_'.join(modes)}"
+                    f"_parameters_{travel_datetime:%Y%m%dT%H%M}.csv"
+                )
+                parameters_path.parent.mkdir(exist_ok=True)
+
+                cost.save_calculation_parameters(
+                    centroids, cost_settings, parameters_path
+                )
+                continue
+
+            logger.info(
+                "Calculating costs for %s - %s", time_period.name, ", ".join(modes)
+            )
+            matrix_path = arguments.folder / (
+                f"costs/{time_period.name}/"
+                f"{'_'.join(modes)}_costs_{travel_datetime:%Y%m%dT%H%M}.csv"
             )
             matrix_path.parent.mkdir(exist_ok=True, parents=True)
 

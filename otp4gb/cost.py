@@ -50,7 +50,7 @@ class CostSettings(NamedTuple):
     crowfly_max_distance: Optional[float] = None
 
 
-class CalculationParameters(NamedTuple):
+class CalculationParameters(pydantic.BaseModel):
     """Parameters for `calculate_costs` function."""
 
     server_url: str
@@ -94,12 +94,51 @@ class GeneralisedCostFactors(pydantic.BaseModel):
 
 
 ##### FUNCTIONS #####
+def _to_crs(data: gpd.GeoDataFrame, crs: str, name: str) -> gpd.GeoDataFrame:
+    """Convert `data` to `crs` and raise error for invalid geometries."""
+    original_crs = data.crs
+    invalid_before: pd.Series = ~data.is_valid
+
+    if invalid_before.any():
+        LOG.warning(
+            "%s (%s%%) invalid features in %s data before CRS conversion",
+            invalid_before.sum(),
+            invalid_before.sum() / len(data) * 100,
+            name,
+        )
+
+    data = data.to_crs(crs)
+
+    invalid_after: pd.Series = ~data.is_valid
+    if not invalid_before.equals(invalid_after):
+        raise ValueError(
+            f"{invalid_after.sum()} ({invalid_after.sum()/len(data):.0%}) "
+            f"invalid features after converting {name} from {original_crs} to {crs} "
+        )
+
+    return data
+
+
 def _calculate_distance_matrix(
     origins: gpd.GeoDataFrame, destinations: gpd.GeoDataFrame, crs: str
 ) -> pd.DataFrame:
     """Calculate distances between all `origins` and `destinations`.
 
     Geometries are converted to `crs` before calculating distance.
+
+    Parameters
+    ----------
+    origins, destinations : gpd.GeoDataFrame
+        Points for calculating distances between, should
+        have the same index of zone IDs.
+    crs: str
+        Name of CRS to convert to before calculating
+        distances e.g. 'EPSG:27700'.
+
+    Raises
+    ------
+    ValueError
+        If the CRS conversion causes invalid features.
     """
     distances = pd.DataFrame(
         {
@@ -108,10 +147,9 @@ def _calculate_distance_matrix(
         }
     )
 
-    origins = origins.to_crs(crs)
-    destinations = destinations.to_crs(crs)
-
     for name, data in (("origin", origins), ("destination", destinations)):
+        data = _to_crs(data, crs, f"{name} centroids")
+
         distances = distances.merge(
             data["geometry"],
             left_on=name,
@@ -131,7 +169,6 @@ def _calculate_distance_matrix(
 def build_calculation_parameters(
     zones: centroids.ZoneCentroids,
     settings: CostSettings,
-    crowfly_max_distance: Optional[float] = None,
     crowfly_distance_crs: str = CROWFLY_DISTANCE_CRS,
 ) -> list[CalculationParameters]:
     """Build a list of parameters for running `calculate_costs`.
@@ -142,9 +179,6 @@ def build_calculation_parameters(
         Positions of zones to calculate costs between.
     settings : CostSettings
         Additional settings for calculating the costs.
-    crowfly_max_distance : float, optional
-        Any OD pairs with crow-fly distances greater than this
-        won't be included in the list of queries.
     crowfly_distance_crs : str, default `CROWFLY_DISTANCE_CRS`
         Coordinate reference system to convert geometries to
         when calculating crow-fly distances.
@@ -176,7 +210,7 @@ def build_calculation_parameters(
     else:
         destinations = zones.destinations.set_index(zones.columns.id)[zone_columns]
 
-    if crowfly_max_distance is not None and crowfly_max_distance > 0:
+    if settings.crowfly_max_distance is not None and settings.crowfly_max_distance > 0:
         distances = _calculate_distance_matrix(
             origins,
             origins if destinations is None else destinations,
@@ -185,22 +219,23 @@ def build_calculation_parameters(
     else:
         distances = None
 
+    pbar = tqdm.tqdm(
+        itertools.product(origins.index, origins.index),
+        desc="Building parameters",
+        total=len(origins) ** 2,
+        dynamic_ncols=True,
+    )
+
     params = []
-    for origin, destination in itertools.product(origins.index, origins.index):
+    over_distance = 0
+    for origin, destination in pbar:
         if origin == destination and destinations is None:
             continue
 
         if distances is not None:
             distance = distances.at[origin, destination]
-            if distance > crowfly_max_distance:
-                LOG.debug(
-                    "Excluding %s - %s because crow-fly distance (%.0f) "
-                    "is greater than max distance parameter (%.0f)",
-                    origin,
-                    destination,
-                    distance,
-                    crowfly_max_distance,
-                )
+            if distance > settings.crowfly_max_distance:
+                over_distance += 1
                 continue
 
         params.append(
@@ -218,10 +253,58 @@ def build_calculation_parameters(
                 searchWindow=settings.search_window_seconds,
                 wheelchair=settings.wheelchair,
                 max_walk_distance=settings.max_walk_distance,
+                crowfly_max_distance=settings.crowfly_max_distance,
             )
         )
 
+    if over_distance > 0:
+        LOG.warning(
+            "%s OD pairs excluded because they're crow-fly distance > %.0f",
+            f"{over_distance:,}",
+            settings.crowfly_max_distance,
+        )
+
+    LOG.info("Built parameters for %s requests", f"{len(params):,}")
     return params
+
+
+def save_calculation_parameters(
+    zones: centroids.ZoneCentroids,
+    settings: CostSettings,
+    output_file: pathlib.Path,
+    **kwargs,
+) -> pathlib.Path:
+    """Build calibration parameters and save to JSON lines file.
+
+    Parameters
+    ----------
+    zone_centroids :ZoneCentroids
+        Positions of zones to calculate costs between.
+    settings : CostSettings
+        Additional settings for calculating the costs.
+    output_file : pathlib.Path
+        File to save, suffix will be changed to '.jsonl'
+        if it isn't already.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to JSON lines file created.
+    """
+    parameters = build_calculation_parameters(zones, settings, **kwargs)
+    pbar = tqdm.tqdm(parameters, desc="Saving parameters", dynamic_ncols=True)
+
+    output_file = output_file.with_suffix(".jsonl")
+    with open(output_file, "wt", encoding="utf-8") as file:
+        for params in pbar:
+            file.write(params.json() + "\n")
+
+    LOG.info(
+        "Written %s calculation parameters to JSON lines file: %s",
+        len(parameters),
+        output_file,
+    )
+    return output_file
 
 
 # TODO(MB) Integrate LSOA analysis with the new build_calculation_parameters method
