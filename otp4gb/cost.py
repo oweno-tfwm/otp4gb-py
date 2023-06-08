@@ -878,7 +878,6 @@ def build_cost_matrix(
     generalised_cost_parameters: GeneralisedCostFactors,
     aggregation_method: AggregationMethod,
     workers: int = 0,
-    crowfly_max_distance: Optional[float] = None,
 ) -> None:
     """Create cost matrix for all zone to zone pairs.
 
@@ -897,12 +896,9 @@ def build_cost_matrix(
         Aggregation method used for generalised cost matrix.
     workers : int, default 0
         Number of threads to create during calculations.
-    crowfly_max_distance: Optional[float]
-        Maximum permissible crowflies trip distance (NOT on road network)
-        for each OD trip
     """
     LOG.info("Calculating costs for %s with settings\n%s", matrix_file.name, settings)
-    jobs = build_calculation_parameters(zone_centroids, settings, crowfly_max_distance)
+    jobs = build_calculation_parameters(zone_centroids, settings)
 
     lock = threading.Lock()
     response_file = matrix_file.with_name(matrix_file.name + "-response_data.jsonl")

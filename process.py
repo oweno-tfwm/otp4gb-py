@@ -159,7 +159,6 @@ def main():
                 config.generalised_cost_factors,
                 config.iterinary_aggregation_method,
                 config.number_of_threads,
-                config.crowfly_max_distance,
             )
 
     # Stop OTP Server
