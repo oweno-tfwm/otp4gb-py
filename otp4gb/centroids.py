@@ -126,7 +126,7 @@ def _add_centroids_back(
         `clipped` with additional centroids from `original`.
     """
     missing_ids = other_ids.loc[~other_ids.isin(clipped[id_column])]
-    if len(missing_ids) > 0:
+    if len(missing_ids) == 0:
         return clipped
 
     additional_data = original.loc[original[id_column] == missing_ids]
