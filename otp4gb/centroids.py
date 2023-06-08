@@ -129,7 +129,7 @@ def _add_centroids_back(
     if len(missing_ids) == 0:
         return clipped
 
-    additional_data = original.loc[original[id_column] == missing_ids]
+    additional_data = original.loc[original[id_column].isin(missing_ids)]
 
     return pd.concat([clipped, additional_data])
 
