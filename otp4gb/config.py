@@ -11,7 +11,7 @@ from typing import Optional
 import pydantic
 import caf.toolkit
 
-from otp4gb import cost, routing
+from otp4gb import cost, parameters, routing, util
 from otp4gb.centroids import Bounds
 
 
@@ -25,7 +25,6 @@ LOG_DIR = ROOT_DIR / "logs"
 # this must not exceed the total amount of RAM.
 PREPARE_MAX_HEAP = os.environ.get("PREPARE_MAX_HEAP", "25G")
 SERVER_MAX_HEAP = os.environ.get("SERVER_MAX_HEAP", "25G")
-TEXT_ENCODING = "utf-8"
 LOG = logging.getLogger(__name__)
 
 
@@ -55,8 +54,8 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     number_of_threads: pydantic.conint(ge=0, le=10) = 0
     no_server: bool = False
     crowfly_max_distance: Optional[float] = None
-    ruc_lookup: Optional[cost.RUCLookup] = None
-    irrelevant_destinations: Optional[cost.IrrelevantDestinations] = None
+    ruc_lookup: Optional[parameters.RUCLookup] = None
+    irrelevant_destinations: Optional[parameters.IrrelevantDestinations] = None
 
     # Makes a classmethod not recognised by pylint, hence disabling self check
     @pydantic.validator("extents", pre=True)
@@ -73,7 +72,7 @@ def load_config(folder: pathlib.Path) -> ProcessConfig:
 
 
 def write_build_config(
-    folder: pathlib.Path, date: datetime.date, encoding: str = TEXT_ENCODING
+    folder: pathlib.Path, date: datetime.date, encoding: str = util.TEXT_ENCODING
 ) -> None:
     """Load default build config values, update and write to graph folder.
 
@@ -83,7 +82,7 @@ def write_build_config(
         Folder to save the build config to.
     date : datetime.date
         Date of the transit data.
-    encoding : str, default `TEXT_ENCODING`
+    encoding : str, default `util.TEXT_ENCODING`
         Encoding to use when reading and writing config file.
     """
     folder = pathlib.Path(folder)

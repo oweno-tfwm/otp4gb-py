@@ -15,7 +15,7 @@ from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.logging import file_handler_factory, get_logger
 from otp4gb.otp import Server
 from otp4gb.util import Timer
-from otp4gb import cost
+from otp4gb import cost, parameters
 
 
 logger = get_logger()
@@ -115,7 +115,7 @@ def main():
 
         for modes in config.modes:
             print()  # Empty line space in cmd window
-            cost_settings = cost.CostSettings(
+            cost_settings = parameters.CostSettings(
                 server_url="http://localhost:8080",
                 modes=modes,
                 datetime=travel_datetime,
@@ -138,7 +138,7 @@ def main():
                 )
                 parameters_path.parent.mkdir(exist_ok=True)
 
-                cost.save_calculation_parameters(
+                parameters.save_calculation_parameters(
                     zones=centroids,
                     settings=cost_settings,
                     output_file=parameters_path,
@@ -156,14 +156,18 @@ def main():
             )
             matrix_path.parent.mkdir(exist_ok=True, parents=True)
 
-            cost.build_cost_matrix(
-                zone_centroids=centroids,
+            jobs = parameters.build_calculation_parameters(
+                zones=centroids,
                 settings=cost_settings,
+                ruc_lookup=config.ruc_lookup,
+                irrelevant_destinations=config.irrelevant_destinations,
+            )
+
+            cost.build_cost_matrix(
+                jobs=jobs,
                 matrix_file=matrix_path,
                 generalised_cost_parameters=config.generalised_cost_factors,
                 aggregation_method=config.iterinary_aggregation_method,
-                ruc_lookup=config.ruc_lookup,
-                irrelevant_destinations=config.irrelevant_destinations,
                 workers=config.number_of_threads,
             )
 
