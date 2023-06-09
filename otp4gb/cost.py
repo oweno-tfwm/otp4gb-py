@@ -108,6 +108,14 @@ class RUCLookup:
     ruc_column: str = "ruc"
 
 
+@dataclasses.dataclass
+class IrrelevantDestinations:
+    """Path to file containing irrelevant destinations, and column name."""
+
+    path: pathlib.Path
+    zone_column: str = "zone_id"
+
+
 ##### FUNCTIONS #####
 def _to_crs(data: gpd.GeoDataFrame, crs: str, name: str) -> gpd.GeoDataFrame:
     """Convert `data` to `crs` and raise error for invalid geometries."""
@@ -228,16 +236,41 @@ def _load_ruc_lookup(data: RUCLookup, zones: np.ndarray) -> pd.Series:
     return lookup
 
 
+def _load_irrelevant_destinations(
+    data: IrrelevantDestinations, zones: np.ndarray
+) -> np.ndarray | None:
+    """Load array of destinations to exclude, return None if file is empty."""
+    LOG.info("Loading irrelevant destinations from %s", data.path.name)
+    irrelevant_data = pd.read_csv(data.path, usecols=[data.zone_column])
+    irrelevant = irrelevant_data[data.zone_column].unique()
+
+    unknown_zones = irrelevant[~np.isin(irrelevant, zones)]
+    if len(unknown_zones) > 0:
+        raise ValueError(
+            f"{len(unknown_zones)} zones in irrelevant destinations not "
+            f"found in centroids data: {_summarise_list(unknown_zones)}"
+        )
+
+    LOG.info("Given %s unique destinations to exclude", len(irrelevant))
+
+    if len(irrelevant) == 0:
+        return None
+
+    return irrelevant
+
+
 def _build_calculation_parameters_iter(
     settings: CostSettings,
     columns: centroids.ZoneCentroidColumns,
     origins: gpd.GeoDataFrame,
     destinations: gpd.GeoDataFrame | None = None,
+    irrelevant_destinations: np.ndarray | None = None,
     distances: pd.DataFrame | None = None,
     distance_factors: pd.Series | None = None,
     progress_bar: bool = True,
 ) -> Iterator[CalculationParameters]:
     """Generate calculation parameters, internal function for `build_calculation_parameters`."""
+
     def row_to_place(row: pd.Series) -> routing.Place:
         point = row.at["geometry"]
 
@@ -269,7 +302,7 @@ def _build_calculation_parameters_iter(
         if distances is not None:
             od_pairs = distances.loc[
                 distances <= settings.crowfly_max_distance
-            ].index.tolist()
+            ].index.to_frame(index=False)
             LOG.info(
                 "Dropped %s requests with crow-fly distance > %s (%s remaining)",
                 f"{len(distances) - len(od_pairs):,}",
@@ -280,12 +313,31 @@ def _build_calculation_parameters_iter(
         LOG.info("No crow-fly distance filtering applied")
 
     if od_pairs is None:
-        od_pairs = list(itertools.product(origins.index, origins.index))
+        od_pairs = pd.DataFrame(
+            itertools.product(origins.index, origins.index),
+            columns=["origin", "destination"],
+        )
+
+    if irrelevant_destinations is not None:
+        exclude = od_pairs["destination"].isin(irrelevant_destinations)
+        od_pairs = od_pairs.loc[~exclude]
+        LOG.info(
+            "Dropped %s OD pairs with irrelevant destinations, %s remaining",
+            f"{exclude.sum():,}",
+            f"{len(od_pairs):,}",
+        )
+    else:
+        LOG.info("No irrelevant destinations excluded")
 
     if progress_bar:
-        iterator = tqdm.tqdm(od_pairs, desc="Building parameters", dynamic_ncols=True)
+        iterator = tqdm.tqdm(
+            od_pairs.itertuples(index=False, name=None),
+            desc="Building parameters",
+            dynamic_ncols=True,
+            total=len(od_pairs),
+        )
     else:
-        iterator = od_pairs
+        iterator = od_pairs.itertuples(index=False, name=None)
 
     for origin, destination in iterator:
         yield CalculationParameters(
@@ -310,6 +362,7 @@ def build_calculation_parameters(
     zones: centroids.ZoneCentroids,
     settings: CostSettings,
     ruc_lookup: RUCLookup | None = None,
+    irrelevant_destinations: IrrelevantDestinations | None = None,
     crowfly_distance_crs: str = CROWFLY_DISTANCE_CRS,
 ) -> list[CalculationParameters]:
     """Build a list of parameters for running `calculate_costs`.
@@ -323,6 +376,9 @@ def build_calculation_parameters(
     ruc_lookup : RUCLookup, optional
         File containing zone lookup for rural urban classification,
         used for factoring max crow-fly distance filter.
+    irrelevant_destinations: IrrelevantDestinations, optional
+        File containing list of destinations to exclude from
+        calculation parameters.
     crowfly_distance_crs : str, default `CROWFLY_DISTANCE_CRS`
         Coordinate reference system to convert geometries to
         when calculating crow-fly distances.
@@ -352,18 +408,26 @@ def build_calculation_parameters(
         distances = None
 
     if ruc_lookup is not None and distances is not None:
-        ruc_lookup = _load_ruc_lookup(ruc_lookup, origins.index.values)
+        distance_factors = _load_ruc_lookup(ruc_lookup, origins.index.values)
     else:
-        ruc_lookup = None
+        distance_factors = None
+
+    if irrelevant_destinations is not None:
+        irrelevant = _load_irrelevant_destinations(
+            irrelevant_destinations, origins.index.values
+        )
+    else:
+        irrelevant = None
 
     parameters: list[CalculationParameters] = []
     iterator = _build_calculation_parameters_iter(
         settings,
         zones.columns,
-        origins,
-        destinations,
-        distances,
-        distance_factors=ruc_lookup,
+        origins=origins,
+        destinations=destinations,
+        irrelevant_destinations=irrelevant,
+        distances=distances,
+        distance_factors=distance_factors,
     )
 
     for params in iterator:
@@ -417,373 +481,6 @@ def save_calculation_parameters(
         output_file,
     )
     return output_file
-
-
-# TODO(MB) Integrate LSOA analysis with the new build_calculation_parameters method
-def _supersceded_build_calculation_parameters(
-    zone_centroids: gpd.GeoDataFrame,  # TODO(MB) Custom centroids class
-    centroids_columns: centroids.ZoneCentroidColumns,
-    settings: CostSettings,
-    crowfly_max_distance: Optional[float] = None,
-) -> list[CalculationParameters]:
-    global zone_centroids_BnG
-    """Build a list of parameters for running `calculate_costs`.
-
-    Parameters
-    ----------
-    zone_centroids : gpd.GeoDataFrame
-        Positions of zones to calculate costs between.
-    centroids_columns : centroids.ZoneCentroidColumns
-        Names of the columns in `zone_centroids`.
-    settings : CostSettings
-        Additional settings for calculating the costs.
-
-    Returns
-    -------
-    list[CalculationParameters]
-        Parameters to run `calculate_costs`.
-    """
-
-    #### LSOA TRSE ####
-    filter_radius = (
-        crowfly_max_distance  # crowfly_max_distance specified within config.yml
-    )
-
-    def row_to_place(row: pd.Series) -> routing.Place:
-        return routing.Place(
-            name=row[centroids_columns.name],
-            id=row.name,
-            zone_system=row[centroids_columns.system],
-            lon=row["geometry"].y,
-            lat=row["geometry"].x,
-        )
-
-    LOG.info("Building cost calculation parameters")
-    zone_centroids = zone_centroids.set_index(centroids_columns.id)[
-        [centroids_columns.name, centroids_columns.system, "geometry"]
-    ]
-
-    # Print statistics for user
-    print("\nLSOA analysis maximum crow fly trip distance: {}".format(filter_radius))
-
-    # Load LSOA destination relevance and Rural Urban Classification (RUC) lookups
-    LSOA_relevance_path = os.path.join(os.getcwd(), "Data", "LSOA_amenities.csv")
-    LSOA_RUC_path = os.path.join(os.getcwd(), "Data", "compiled_LSOA_area_types.csv")
-    LSOA_relevance = pd.read_csv(LSOA_relevance_path)
-    LSOA_RUC_types = pd.read_csv(LSOA_RUC_path)
-
-    # Set zone id"s as index, matching `zone_centroids`
-    LSOA_relevance.set_index("LSOA11CD", inplace=True)
-    LSOA_RUC_types.set_index("LSOA11CD", inplace=True)
-
-    # Path to compiled zone centroids (within Data folder)
-    compiled_centroids_path = os.path.join(
-        os.getcwd(), output_dir_name, "compiled_zone_centroids_with_filter.csv"
-    )
-
-    # Define RUC weightings to be applied to maximum radius filter based on Zone origin RUC
-    LSOA_RUC_weights = {
-        "A1": 1,
-        "B1": 1,
-        "C1": 1,
-        "C2": 1,
-        "D1": 1.25,
-        "D2": 1.25,
-        "E1": 1.5,
-        "E2": 1.5,
-    }
-
-    # Create GeoDataFrame of all OD pairs & calculate distances between them.
-    if (filter_radius != 0) & (os.path.isfile(compiled_centroids_path) is False):
-        print(
-            "\nA zone centroids file `compiled_zone_centroids_with_filter.csv` could not be found in directory",
-            output_dir_name,
-        )
-        print("Creating `compiled_zone_centroids_with_filter.csv` now.\n")
-
-        # Create copy of zone_centroids to manipulate CRS (filter distance is metres (EPSG:27700))
-        zone_centroids_BnG = zone_centroids.copy()
-        zone_centroids_BnG = gpd.GeoDataFrame(zone_centroids_BnG)
-        zone_centroids_BnG.to_crs("EPSG:27700", inplace=True)
-
-        # For joining destination centroids later
-        zone_centroids_BnG_raw = zone_centroids_BnG.copy()
-
-        # Set crs to BnG [EPSG:27700] so distance calc is in metres.
-        zone_centroids_BnG.to_crs("EPSG:27700")
-
-        zone_centroids_BnG.drop(columns=["zone_system", "zone_name"], inplace=True)
-
-        # Create a DataFrame of all possible OD combinations:
-        origins = []
-        destinations = []
-        OD_pairs = []
-        LOG.info(
-            "Constructing trip distance GeoDataFrame and assessing relevant destination zones"
-        )
-        LSOA_ids = list(zone_centroids.index)
-
-        # Create possible combinations (trips)
-        length = 2  # An Origin & Destination
-        x = list(range(len(zone_centroids)))  # Possible Origins and Destinations
-        mesh = np.meshgrid(*([x] * length))
-        result = np.vstack([y.flat for y in mesh]).T
-
-        # Filter out irrelevant trips from total trips above.
-        print(
-            "\nAnalysing",
-            len(result),
-            "initial trips for destination relevance & same zone journeys.\n",
-        )
-
-        for i in tqdm.tqdm(zip(result)):
-            o = i[0][0]
-            d = i[0][1]
-
-            # Ignore same zone journeys
-            if o == d:
-                continue
-
-            # Check for relevance of Destination LSOA
-            if LSOA_relevance.loc[LSOA_ids[d]]["totals"] > 0:
-                # Destination LSOA contains at least 1 amenity, ergo is relevant
-                origin = LSOA_ids[o]
-                destin = LSOA_ids[d]
-
-                origins.append(origin)
-                destinations.append(destin)
-                OD_pairs.append("_".join((origin, destin)))
-            else:
-                # Destination LSOA is not relevant
-                continue
-
-        LOG.info(
-            "Removing: %s trips, leaving: %s trips remaining.",
-            str((len(result) - len(origins))),
-            str(len(origins)),
-        )
-
-        LOG.info("Constructing DataFrame of trips")
-
-        # DF of all OD pairs
-        OD_pairs = pd.DataFrame(
-            data={
-                "Origins": origins,
-                "Destinations": destinations,
-                "OD_pairs": OD_pairs,
-            }
-        )
-
-        LOG.info("Merging Origins to geometries")
-
-        # Join on zone centroid data for Origins
-        zone_centroids_BnG = zone_centroids_BnG.merge(
-            how="left",
-            right=OD_pairs,
-            left_on=zone_centroids_BnG.index,
-            right_on="Origins",
-        )
-
-        # Re-classify dataframe as GeoDataFrame
-        zone_centroids_BnG = gpd.GeoDataFrame(zone_centroids_BnG, crs="EPSG:27700")
-
-        # Rename Origin centroids col to Origin_centroids
-        zone_centroids_BnG.rename(
-            columns={"geometry": "Origin_centroids"}, inplace=True
-        )
-        # Re-specify geometry
-        zone_centroids_BnG.set_geometry(
-            "Origin_centroids", inplace=True, crs="EPSG:27700"
-        )
-
-        LOG.info("Merging Destinations to geometries")
-
-        # Join on zone centroids data for Destinations
-        zone_centroids_BnG = zone_centroids_BnG.merge(
-            how="left",
-            right=zone_centroids_BnG_raw,
-            left_on="Destinations",
-            right_on=zone_centroids_BnG_raw.index,
-        )
-        # Re-classify dataframe as GeoDataFrame
-        zone_centroids_BnG = gpd.GeoDataFrame(zone_centroids_BnG, crs="EPSG:27700")
-
-        # Rename centroids to destination centroids
-        zone_centroids_BnG.rename(
-            columns={"geometry": "Destination_centroids"}, inplace=True
-        )
-
-        LOG.info("Calculating trip distances")
-        # Work out distance between all OD pairs
-        zone_centroids_BnG["distances"] = zone_centroids_BnG[
-            "Origin_centroids"
-        ].distance(zone_centroids_BnG["Destination_centroids"])
-
-        # Print run stats for user
-        print(
-            "\nMaximum trip distance: {} \nMinimum trip distance: {}\n".format(
-                str(round(max(zone_centroids_BnG["distances"]), 2)) + " metres.",
-                str(round(min(zone_centroids_BnG["distances"]), 2)) + " metres.",
-            )
-        )
-
-        # Short enough trips are the number of trips within the specified filter radius with Rural weighting applied
-        # to the filter distance. Any trip distance greater than this can now be removed.
-        short_enough_trips = len(
-            zone_centroids_BnG[
-                zone_centroids_BnG["distances"]
-                < (filter_radius * LSOA_RUC_weights["E2"])
-            ]
-        )
-        all_trips = len(zone_centroids_BnG)
-        diff = str(all_trips - short_enough_trips)
-
-        LOG.info("Removing " + str(diff) + " trips for being too far")
-        LOG.info("Leaving: " + str(short_enough_trips) + " trips remaining.")
-        zone_centroids_BnG = zone_centroids_BnG[
-            zone_centroids_BnG["distances"] < filter_radius * LSOA_RUC_weights["E2"]
-        ]
-        # Likely spent a long time compiling and computing the above distances. Save it in case of crashes.
-        # We can re-load above if it has already been compiled.
-
-        # Save as .csv. Although a GeoDataFrame, we no longer require spatial information - only trip distances.
-        print(
-            "\nSaving compiled zone_centroids_BnG file as csv to:\n    ",
-            compiled_centroids_path,
-            "\n",
-        )
-
-        zone_centroids_BnG = zone_centroids_BnG[
-            [
-                "Origins",
-                "Destinations",
-                "OD_pairs",
-                centroids_columns.name,
-                centroids_columns.system,
-                "distances",
-            ]
-        ]
-
-        zone_centroids_BnG.to_csv(compiled_centroids_path)
-
-    # Check if a maximum trip distance has been passed
-    elif (filter_radius != 0) & (os.path.isfile(compiled_centroids_path) is True):
-        # Compiled centroids has been found. Loading.
-        print(
-            "Existing compiled_zone_centroids file found. Loading the DataFrame\n",
-            compiled_centroids_path,
-            "\n",
-        )
-        zone_centroids_BnG = pd.read_csv(compiled_centroids_path)
-
-    params = []
-    if filter_radius == 0:
-        # No filter radius applied - carry on as normal.
-        LOG.info("No maximum crowfly trip distance applied - proceeding as normal")
-
-        for o, d in tqdm.tqdm(
-            itertools.product(zone_centroids.index, zone_centroids.index)
-        ):
-            if o == d:
-                continue
-
-            params.append(
-                CalculationParameters(
-                    server_url=settings.server_url,
-                    modes=[str(m) for m in settings.modes],
-                    datetime=settings.datetime,
-                    origin=row_to_place(zone_centroids.loc[o]),
-                    destination=row_to_place(zone_centroids.loc[d]),
-                    arrive_by=settings.arrive_by,
-                    searchWindow=settings.search_window_seconds,
-                    wheelchair=settings.wheelchair,
-                    max_walk_distance=settings.max_walk_distance,
-                )
-            )
-
-        return params
-
-    LOG.info("Assessing if trips are too far based on Rural Urban Classifications.")
-
-    # Load & format trips requested lookup
-    try:
-        trips_requested = pd.read_csv(
-            os.path.join(output_dir_path, "trips_previously_requested.csv")
-        )
-
-        # set OD_code as index
-        trips_requested.set_index("od_code", inplace=True, drop=True)
-    except FileNotFoundError:
-        print(
-            "\nA file `{}/trips_previously_requested.csv` could not be located.".format(
-                output_dir_name
-            ),
-            "\nThus, assessing all found trips",
-        )
-        trips_requested_file = False
-
-    already_requested = 0
-    too_far_destinations = 0
-    if filter_radius != 0:
-        # Filter radius has been applied - use compiled GDF from above
-        compiled_centroids_path = os.path.join(
-            os.getcwd(), "Data", "compiled_zone_centroids_with_filter.csv"
-        )
-        zone_centroids_BnG = pd.read_csv(compiled_centroids_path)
-        print("\nTrips to assess:", len(zone_centroids_BnG))
-
-        zone_distances = zone_centroids_BnG.copy()
-
-        # Create DF of journey distances with OD_pairs as index to apply .loc[] with OD_pairs
-        zone_distances.set_index("OD_pairs", inplace=True)
-
-        for o, d in tqdm.tqdm(
-            zip(zone_centroids_BnG["Origins"], zone_centroids_BnG["Destinations"])
-        ):
-            # Check if OD journey exceeds maximum distance with RUC weightings applied
-            if filter_radius != 0:
-                od_code = "_".join((str(o), str(d)))
-
-                if trips_requested_file:
-                    if od_code in trips_requested.index:
-                        # Trip has been requested in previous run. Skip.
-                        already_requested += 1
-                        continue
-
-                od_distance = zone_distances.loc[od_code]["distances"]
-                # Check area type of origin zone - apply extra radius weighting if origin is rural
-                radius_weight = LSOA_RUC_weights[LSOA_RUC_types.loc[o]["RUC11CD"]]
-
-                if od_distance > (filter_radius * radius_weight):
-                    too_far_destinations += 1
-                    continue
-
-            params.append(
-                CalculationParameters(
-                    server_url=settings.server_url,
-                    modes=[str(m) for m in settings.modes],
-                    datetime=settings.datetime,
-                    origin=row_to_place(zone_centroids.loc[o]),
-                    destination=row_to_place(zone_centroids.loc[d]),
-                    arrive_by=settings.arrive_by,
-                    searchWindow=settings.search_window_seconds,
-                    wheelchair=settings.wheelchair,
-                    max_walk_distance=settings.max_walk_distance,
-                )
-            )
-
-        LOG.info(
-            "Additional: "
-            + str(too_far_destinations)
-            + " journeys removed for being too far based on RUCs."
-        )
-        LOG.info(
-            "With a further: "
-            + str(already_requested)
-            + " journeys removed for having already been requested."
-        )
-        LOG.info("Requests will now be sent for " + str(len(params)) + " journeys.")
-        return params
 
 
 def calculate_costs(
@@ -990,6 +687,7 @@ def build_cost_matrix(
     generalised_cost_parameters: GeneralisedCostFactors,
     aggregation_method: AggregationMethod,
     ruc_lookup: RUCLookup | None = None,
+    irrelevant_destinations: IrrelevantDestinations | None = None,
     workers: int = 0,
 ) -> None:
     """Create cost matrix for all zone to zone pairs.
@@ -1010,11 +708,19 @@ def build_cost_matrix(
     ruc_lookup : RUCLookup, optional
         File containing zone lookup for rural urban classification,
         used for factoring max crow-fly distance filter.
+    irrelevant_destinations: IrrelevantDestinations, optional
+        File containing list of destinations to exclude from
+        calculation parameters.
     workers : int, default 0
         Number of threads to create during calculations.
     """
     LOG.info("Calculating costs for %s with settings\n%s", matrix_file.name, settings)
-    jobs = build_calculation_parameters(zone_centroids, settings, ruc_lookup)
+    jobs = build_calculation_parameters(
+        zones=zone_centroids,
+        settings=settings,
+        ruc_lookup=ruc_lookup,
+        irrelevant_destinations=irrelevant_destinations,
+    )
 
     lock = threading.Lock()
     response_file = matrix_file.with_name(matrix_file.name + "-response_data.jsonl")

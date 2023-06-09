@@ -30,7 +30,7 @@ LOG = logging.getLogger(__name__)
 
 
 # Pylint incorrectly flags no-member for pydantic.BaseModel
-class TimePeriod(pydantic.BaseModel): # pylint: disable=no-member
+class TimePeriod(pydantic.BaseModel):  # pylint: disable=no-member
     """Data required for a single time period."""
 
     name: str
@@ -56,6 +56,7 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     no_server: bool = False
     crowfly_max_distance: Optional[float] = None
     ruc_lookup: Optional[cost.RUCLookup] = None
+    irrelevant_destinations: Optional[cost.IrrelevantDestinations] = None
 
     # Makes a classmethod not recognised by pylint, hence disabling self check
     @pydantic.validator("extents", pre=True)

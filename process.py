@@ -139,7 +139,11 @@ def main():
                 parameters_path.parent.mkdir(exist_ok=True)
 
                 cost.save_calculation_parameters(
-                    centroids, cost_settings, parameters_path, ruc_lookup=config.ruc_lookup
+                    zones=centroids,
+                    settings=cost_settings,
+                    output_file=parameters_path,
+                    ruc_lookup=config.ruc_lookup,
+                    irrelevant_destinations=config.irrelevant_destinations,
                 )
                 continue
 
@@ -153,13 +157,14 @@ def main():
             matrix_path.parent.mkdir(exist_ok=True, parents=True)
 
             cost.build_cost_matrix(
-                centroids,
-                cost_settings,
-                matrix_path,
-                config.generalised_cost_factors,
-                config.iterinary_aggregation_method,
-                config.ruc_lookup,
-                config.number_of_threads,
+                zone_centroids=centroids,
+                settings=cost_settings,
+                matrix_file=matrix_path,
+                generalised_cost_parameters=config.generalised_cost_factors,
+                aggregation_method=config.iterinary_aggregation_method,
+                ruc_lookup=config.ruc_lookup,
+                irrelevant_destinations=config.irrelevant_destinations,
+                workers=config.number_of_threads,
             )
 
     # Stop OTP Server
