@@ -5,6 +5,7 @@
 
 ##### IMPORTS #####
 # Standard imports
+import dataclasses
 import datetime
 import enum
 import io
@@ -13,7 +14,7 @@ import logging
 import pathlib
 import threading
 import os
-from typing import Any, Iterator, NamedTuple, Optional
+from typing import Any, Iterator, NamedTuple, Optional, Sequence
 
 # Third party imports
 import geopandas as gpd
@@ -29,11 +30,16 @@ from otp4gb import routing, util, centroids
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
 CROWFLY_DISTANCE_CRS = "EPSG:27700"
-
-# TODO(MB) These shouldn't be done outside a function as they stop this module from being imported
-# Name & Path to current run output folder to save compiled zone centroids
-# output_dir_path = os.path.abspath(base_sys.argv[1])
-# output_dir_name = os.path.basename(output_dir_path)
+RUC_WEIGHTS = {
+    "A1": 1,
+    "B1": 1,
+    "C1": 1,
+    "C2": 1,
+    "D1": 1.25,
+    "D2": 1.25,
+    "E1": 1.5,
+    "E2": 1.5,
+}
 
 
 ##### CLASSES #####
@@ -91,6 +97,15 @@ class GeneralisedCostFactors(pydantic.BaseModel):
     transit_time: float
     walk_distance: float
     transit_distance: float
+
+
+@dataclasses.dataclass
+class RUCLookup:
+    """Path to RUC lookup file and names of columns."""
+
+    path: pathlib.Path
+    id_column: str = "zone_id"
+    ruc_column: str = "ruc"
 
 
 ##### FUNCTIONS #####
@@ -166,9 +181,135 @@ def _calculate_distance_matrix(
     return distances.set_index(["origin", "destination"])["distance"]
 
 
+def _summarise_list(values: Sequence | np.ndarray, max_values: int = 10) -> str:
+    """Create string of first few values."""
+    message = ", ".join(str(i) for i in values[:max_values])
+
+    if len(values) > max_values:
+        message += "..."
+
+    return message
+
+
+def _load_ruc_lookup(data: RUCLookup, zones: np.ndarray) -> pd.Series:
+    """Load RUC lookup data into Series of weights to apply."""
+    LOG.info("Loading RUC lookup from %s", data.path.name)
+    lookup_data = pd.read_csv(data.path, usecols=[data.id_column, data.ruc_column])
+    lookup: pd.Series = lookup_data.set_index(data.id_column, verify_integrity=True)[
+        data.ruc_column
+    ]
+
+    unknown_zones = lookup.index[~lookup.index.isin(zones)]
+    if len(unknown_zones) > 0:
+        raise ValueError(
+            f"{len(unknown_zones)} values in RUC lookup zones not "
+            f"found in centroids data: {_summarise_list(unknown_zones)}"
+        )
+
+    lookup = lookup.astype(str).str.upper()
+    invalid_ruc = lookup[~lookup.isin(RUC_WEIGHTS)].unique().tolist()
+    if len(invalid_ruc) > 0:
+        raise ValueError(
+            f"{len(invalid_ruc)} values in RUC classifications not "
+            f"found in centroids data: {_summarise_list(invalid_ruc)}"
+        )
+
+    missing_zones = zones[~np.isin(zones, lookup.index)]
+    if len(missing_zones) > 0:
+        LOG.warning(
+            "RUC distance factor defaulting to 1 for %s zones: %s",
+            len(missing_zones),
+            _summarise_list(missing_zones),
+        )
+        lookup = pd.concat([lookup, pd.Series(data=1, index=missing_zones)])
+
+    lookup = lookup.replace(RUC_WEIGHTS).astype(float)
+
+    return lookup
+
+
+def _build_calculation_parameters_iter(
+    settings: CostSettings,
+    columns: centroids.ZoneCentroidColumns,
+    origins: gpd.GeoDataFrame,
+    destinations: gpd.GeoDataFrame | None = None,
+    distances: pd.DataFrame | None = None,
+    distance_factors: pd.Series | None = None,
+    progress_bar: bool = True,
+) -> Iterator[CalculationParameters]:
+    """Generate calculation parameters, internal function for `build_calculation_parameters`."""
+    def row_to_place(row: pd.Series) -> routing.Place:
+        point = row.at["geometry"]
+
+        return routing.Place(
+            name=str(row.at[columns.name]),
+            id=str(row.name),
+            zone_system=str(row.at[columns.system]),
+            lon=point.x,
+            lat=point.y,
+        )
+
+    od_pairs = None
+
+    # Filter OD pairs based on distance before looping
+    if settings.crowfly_max_distance is not None:
+        if distance_factors is not None and distances is not None:
+            # Factor distances down to account for RUC factor
+            # increasing the max distance filter, factor applied
+            # to use origin RUC
+            distance_factors.index.name = "origin"
+            distances = distances.divide(distance_factors, axis=0)
+            LOG.info(
+                "Applied RUC distance factors to %s OD pairs",
+                (distance_factors != 1).sum(),
+            )
+        else:
+            LOG.info("No RUC distance factors applied")
+
+        if distances is not None:
+            od_pairs = distances.loc[
+                distances <= settings.crowfly_max_distance
+            ].index.tolist()
+            LOG.info(
+                "Dropped %s requests with crow-fly distance > %s (%s remaining)",
+                f"{len(distances) - len(od_pairs):,}",
+                f"{settings.crowfly_max_distance:,}",
+                f"{len(od_pairs):,}",
+            )
+    else:
+        LOG.info("No crow-fly distance filtering applied")
+
+    if od_pairs is None:
+        od_pairs = list(itertools.product(origins.index, origins.index))
+
+    if progress_bar:
+        iterator = tqdm.tqdm(od_pairs, desc="Building parameters", dynamic_ncols=True)
+    else:
+        iterator = od_pairs
+
+    for origin, destination in iterator:
+        yield CalculationParameters(
+            server_url=settings.server_url,
+            modes=[str(m) for m in settings.modes],
+            datetime=settings.datetime,
+            origin=row_to_place(origins.loc[origin]),
+            destination=row_to_place(
+                origins.loc[destination]
+                if destinations is None
+                else destinations.loc[destination]
+            ),
+            arrive_by=settings.arrive_by,
+            searchWindow=settings.search_window_seconds,
+            wheelchair=settings.wheelchair,
+            max_walk_distance=settings.max_walk_distance,
+            crowfly_max_distance=settings.crowfly_max_distance,
+        )
+
+
 def build_calculation_parameters(
     zones: centroids.ZoneCentroids,
     settings: CostSettings,
+    ruc_lookup: RUCLookup | None = None,
     crowfly_distance_crs: str = CROWFLY_DISTANCE_CRS,
 ) -> list[CalculationParameters]:
     """Build a list of parameters for running `calculate_costs`.
@@ -179,6 +320,9 @@ def build_calculation_parameters(
         Positions of zones to calculate costs between.
     settings : CostSettings
         Additional settings for calculating the costs.
+    ruc_lookup : RUCLookup, optional
+        File containing zone lookup for rural urban classification,
+        used for factoring max crow-fly distance filter.
     crowfly_distance_crs : str, default `CROWFLY_DISTANCE_CRS`
         Coordinate reference system to convert geometries to
         when calculating crow-fly distances.
@@ -188,18 +332,6 @@ def build_calculation_parameters(
     list[CalculationParameters]
         Parameters to run `calculate_costs`.
     """
-
-    def row_to_place(row: pd.Series) -> routing.Place:
-        point = row.at["geometry"]
-
-        return routing.Place(
-            name=str(row.at[zones.columns.name]),
-            id=str(row.name),
-            zone_system=str(row.at[zones.columns.system]),
-            lon=point.x,
-            lat=point.y,
-        )
-
     LOG.info("Building cost calculation parameters")
 
     zone_columns = [zones.columns.name, zones.columns.system, "geometry"]
@@ -219,53 +351,33 @@ def build_calculation_parameters(
     else:
         distances = None
 
-    pbar = tqdm.tqdm(
-        itertools.product(origins.index, origins.index),
-        desc="Building parameters",
-        total=len(origins) ** 2,
-        dynamic_ncols=True,
+    if ruc_lookup is not None and distances is not None:
+        ruc_lookup = _load_ruc_lookup(ruc_lookup, origins.index.values)
+    else:
+        ruc_lookup = None
+
+    parameters: list[CalculationParameters] = []
+    iterator = _build_calculation_parameters_iter(
+        settings,
+        zones.columns,
+        origins,
+        destinations,
+        distances,
+        distance_factors=ruc_lookup,
     )
 
-    params = []
-    over_distance = 0
-    for origin, destination in pbar:
-        if origin == destination and destinations is None:
-            continue
+    for params in iterator:
+        if isinstance(params, CalculationParameters):
+            parameters.append(params)
 
-        if distances is not None:
-            distance = distances.at[origin, destination]
-            if distance > settings.crowfly_max_distance:
-                over_distance += 1
-                continue
-
-        params.append(
-            CalculationParameters(
-                server_url=settings.server_url,
-                modes=[str(m) for m in settings.modes],
-                datetime=settings.datetime,
-                origin=row_to_place(origins.loc[origin]),
-                destination=row_to_place(
-                    origins.loc[destination]
-                    if destinations is None
-                    else destinations.loc[destination]
-                ),
-                arrive_by=settings.arrive_by,
-                searchWindow=settings.search_window_seconds,
-                wheelchair=settings.wheelchair,
-                max_walk_distance=settings.max_walk_distance,
-                crowfly_max_distance=settings.crowfly_max_distance,
+        else:
+            raise TypeError(
+                f"unexpected type ({type(params)}) returned "
+                "by `_build_calculation_parameters_iter`"
             )
-        )
 
-    if over_distance > 0:
-        LOG.warning(
-            "%s OD pairs excluded because they're crow-fly distance > %.0f",
-            f"{over_distance:,}",
-            settings.crowfly_max_distance,
-        )
-
-    LOG.info("Built parameters for %s requests", f"{len(params):,}")
-    return params
+    LOG.info("Built parameters for %s requests", f"{len(parameters):,}")
+    return parameters
 
 
 def save_calculation_parameters(
@@ -877,6 +989,7 @@ def build_cost_matrix(
     matrix_file: pathlib.Path,
     generalised_cost_parameters: GeneralisedCostFactors,
     aggregation_method: AggregationMethod,
+    ruc_lookup: RUCLookup | None = None,
     workers: int = 0,
 ) -> None:
     """Create cost matrix for all zone to zone pairs.
@@ -894,11 +1007,14 @@ def build_cost_matrix(
         generalised cost.
     aggregation_method : AggregationMethod
         Aggregation method used for generalised cost matrix.
+    ruc_lookup : RUCLookup, optional
+        File containing zone lookup for rural urban classification,
+        used for factoring max crow-fly distance filter.
     workers : int, default 0
         Number of threads to create during calculations.
     """
     LOG.info("Calculating costs for %s with settings\n%s", matrix_file.name, settings)
-    jobs = build_calculation_parameters(zone_centroids, settings)
+    jobs = build_calculation_parameters(zone_centroids, settings, ruc_lookup)
 
     lock = threading.Lock()
     response_file = matrix_file.with_name(matrix_file.name + "-response_data.jsonl")

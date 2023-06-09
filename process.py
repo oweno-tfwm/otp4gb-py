@@ -139,7 +139,7 @@ def main():
                 parameters_path.parent.mkdir(exist_ok=True)
 
                 cost.save_calculation_parameters(
-                    centroids, cost_settings, parameters_path
+                    centroids, cost_settings, parameters_path, ruc_lookup=config.ruc_lookup
                 )
                 continue
 
@@ -158,6 +158,7 @@ def main():
                 matrix_path,
                 config.generalised_cost_factors,
                 config.iterinary_aggregation_method,
+                config.ruc_lookup,
                 config.number_of_threads,
             )
 

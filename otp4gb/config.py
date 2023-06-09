@@ -55,6 +55,7 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     number_of_threads: pydantic.conint(ge=0, le=10) = 0
     no_server: bool = False
     crowfly_max_distance: Optional[float] = None
+    ruc_lookup: Optional[cost.RUCLookup] = None
 
     # Makes a classmethod not recognised by pylint, hence disabling self check
     @pydantic.validator("extents", pre=True)
