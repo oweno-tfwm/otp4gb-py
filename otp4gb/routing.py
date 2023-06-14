@@ -106,7 +106,7 @@ class RoutePlanParameters(pydantic.BaseModel):
             raise ValueError(f"point should have 2 coordinates not {len(value)}")
 
         raise TypeError(
-            f"expected collection or string of coordinates for point not '{value}'"
+            f"expected collection or string of coordinates for point not '{type(value)}'"
         )
 
     @pydantic.validator("date", pre=True)

@@ -5,8 +5,8 @@ which produces cost metrics for public transport routing between given positions
 
 This is an updated version of OTP4GB-py produced by Open Innovations (available at
 [github.com/open-innovations/otp4gb-py](https://github.com/open-innovations/otp4gb-py)),
-which itself is a port port of the [OTP4GB](https://github.com/odileeds/OTP4GB)
-tool written by Tom Forth at Open Innovations.
+which itself is a port of the [OTP4GB](https://github.com/odileeds/OTP4GB) tool written
+by Tom Forth at Open Innovations.
 
 ## Overview
 This flowchart details the full OTP4GB-Py routing and cost calculation process. The process is
@@ -97,6 +97,7 @@ an [example config](example-config.yml) is provided and the parameters for the i
 in table 1.
 
 **Table 1:** *Details the parameters available in the config file and their default values.*
+
 | Parameter                    | Sub-Parameter         | Type                                                             | Default                                | Description                                                                                                     |
 | :--------------------------- | :-------------------- | :--------------------------------------------------------------- | :------------------------------------- | :-------------------------------------------------------------------------------------------------------------- |
 | date                         | -                     | Date (YYYY-MM-DD)                                                | N/A                                    | Date on which the routing should be calculated for.                                                             |
@@ -273,6 +274,7 @@ inputs for this script are provided in a config file and outlined in table 3, (s
 [accessibility config](config/accessibility_config.yml) for an example).
 
 **Table 3:** *Details of the config file parameters for the accessibility script.*
+
 | Parameter                  | Type               | Default | Description                                                                                                      |
 | :------------------------- | :----------------- | :------ | :--------------------------------------------------------------------------------------------------------------- |
 | cost_metrics               | list of file paths | -       | List of cost metrics CSVs (from OTP4GB-Py process).                                                              |
