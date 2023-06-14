@@ -31,8 +31,13 @@ time_periods:
     travel_time: 19:00
     search_window_minutes: 60
 
+# List of lists of modes to include in route calculations
 modes:
+  # List 1
   - - BUS
+    - WALK
+  # List 2
+  - - TRANSIT
     - WALK
 
 # Factors applied to the respective time / distance when calculation the generalised cost
@@ -45,7 +50,26 @@ generalised_cost_factors:
   walk_distance: 1
   transit_distance: 1
 
+# Name of zone centroids file and optional name
+# of destination centroids (if different positions)
+centroids: centroids.csv
+destination_centroids: optional_destination_centroids.csv
+
 # Method used for getting the average generalised cost from all itineraries produced by OTP
 iterinary_aggregation_method: mean
-max_walk_distance: 10000
+max_walk_distance: 10_000
+
 number_of_threads: 10
+no_server: no
+crowfly_max_distance: 1_000_000
+
+# Optional zone rural urban classification lookup,
+# used for adjusting crowfly max distance
+ruc_lookup:
+  path: ruc_lookup.csv
+  id_column: zone_id
+  ruc_column: ruc
+# List of destinations to exclude when calculating routing
+irrelevant_destinations: 
+  path: irrelevant_destinations.csv
+  zone_column: zone_id

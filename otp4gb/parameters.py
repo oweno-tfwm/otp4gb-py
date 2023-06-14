@@ -178,6 +178,7 @@ def _load_ruc_lookup(data: RUCLookup, zones: np.ndarray) -> pd.Series:
             f"found in centroids data: {_summarise_list(unknown_zones)}"
         )
 
+    # TODO(MB) Allow RUC lookup to include custom factors instead of RUC codes
     lookup = lookup.astype(str).str.upper()
     invalid_ruc = lookup[~lookup.isin(RUC_WEIGHTS)].unique().tolist()
     if len(invalid_ruc) > 0:
