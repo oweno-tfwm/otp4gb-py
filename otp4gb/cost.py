@@ -6,6 +6,7 @@
 ##### IMPORTS #####
 import datetime
 import enum
+import functools
 import io
 import logging
 import pathlib
@@ -177,6 +178,7 @@ def _matrix_costs(result: CostResults) -> dict:
 
     stats = [
         "duration",
+        "travel_distance",
         "walkTime",
         "transitTime",
         "waitingTime",
@@ -188,7 +190,13 @@ def _matrix_costs(result: CostResults) -> dict:
     for s in stats:
         values = []
         for it in result.plan.itineraries:
-            val = getattr(it, s)
+            if s == "travel_distance":
+                # Calculate total travel distance because it isn't provided
+                val = functools.reduce(lambda x, y: x + y.distance, it.legs, 0.0)
+
+            else:
+                val = getattr(it, s)
+
             # Set value to NaN if it doesn"t exist or isn"t set
             if val is None:
                 val = np.nan

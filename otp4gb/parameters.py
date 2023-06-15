@@ -106,9 +106,9 @@ def _to_crs(data: gpd.GeoDataFrame, crs: str, name: str) -> gpd.GeoDataFrame:
     return data
 
 
-def _calculate_distance_matrix(
+def calculate_distance_matrix(
     origins: gpd.GeoDataFrame, destinations: gpd.GeoDataFrame, crs: str
-) -> pd.DataFrame:
+) -> pd.Series:
     """Calculate distances between all `origins` and `destinations`.
 
     Geometries are converted to `crs` before calculating distance.
@@ -121,6 +121,12 @@ def _calculate_distance_matrix(
     crs: str
         Name of CRS to convert to before calculating
         distances e.g. 'EPSG:27700'.
+
+    Returns
+    -------
+    pd.Series
+        Series of crow-fly distances with index columns
+        'origin' and 'destination'.
 
     Raises
     ------
@@ -364,7 +370,7 @@ def build_calculation_parameters(
         destinations = zones.destinations.set_index(zones.columns.id)[zone_columns]
 
     if settings.crowfly_max_distance is not None and settings.crowfly_max_distance > 0:
-        distances = _calculate_distance_matrix(
+        distances = calculate_distance_matrix(
             origins,
             origins if destinations is None else destinations,
             crowfly_distance_crs,
