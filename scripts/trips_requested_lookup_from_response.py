@@ -4,137 +4,140 @@ Created on Tue Mar 28 10:37:33 2023
 
 @author: Signalis
 
-Script to create a lookup of already requested trips by OTP. 
-    When OTP filters through provided data to determine requests to send to
-    the server, if OTP detects that a trip has already been requested, from the 
-    lookup, skip this trip!
+Script to create a lookup of already requested trips by OTP.
+
+Sometimes, VMs shut down overnight, or large OTP runs will be split over 
+    numerous VM machines, leaving us with multiple files we don't want to 
+    re-request. This script creates a lookup of previously requested trips
+    from (upto) multiple cost-metric files.
+
+When OTP filters through provided data to determine requests to send to
+    the server, if OTP identifies a that a trip from the lookup that has 
+    already been requested, skip this trip!
     
 Inputs: 
-    - OTP response data (contains requested trips)
+    - OTP cost metrics data file(s) (contains prev. requested trips)
     
 Output: 
-    - Lookup table containing previously requested OD pair trips
+    - Lookup table containing previously requested OD pair trips within the 
+      provided OTP cost metric file(s) 
+      
+    - Optional: If enabled, the compiled cost metric (compiled from all input
+      metrix) will also be saved
     
 """
 #### Imports ####
 import pandas as pd
+import numpy as np
+import os
 
+#### Constants ####
 
-# Load response matrices
-# Load semi-complete final north run, with complete amenities list. 
-#final_run_response_path = r'D:\Repositories\otp4gb-py\outputs_north_run_final\costs\AM\BUS_WALK_costs_20230608T0900_METRICS_FILE.csv'
-#final_run_response_matrix = pd.read_csv(final_run_response_path)
-# Load penultimate north run 
-pen_run_response_path = r'D:\Repositories\otp4gb-py\outputs_rest_of_north\costs\AM\BUS_WALK_costs_20230608T0900-metrics.csv'
-pen_run_response_matrix = pd.read_csv(pen_run_response_path)
+# Path to OTP cost metric files (supports multiple OTP outputs)
+RESPONSE_PATHS = [
+    r"E:\OTP_Processing\OTP outputs\First OTP run (signalis)\BUS_WALK_costs_20230608T0900_COST_METRICS-metrics.csv"
+    ] 
 
-final_run_response_matrix = pen_run_response_matrix
+# Output path & filename to export trips previously requested lookup
+OUT_PATH = r"C:\Users\Signalis\Desktop\temp_outputs"
+OUT_FILENAME = "trips_previously_requested.csv"
 
-# Load complete north run 2 (over weekend on Signalis, only 3 amenities)
-north_run2_response_path = r'E:\outputs_north_run_2\costs\AM\BUS_WALK_costs_20230608T0900_METRICS_FILE_north_2_signalis.csv'
-north_run2_response_matrix = pd.read_csv(north_run2_response_path)
-# Load complete Greater Manchester run, with complete amenities list. 
-GM_authority_test_path = r'D:\Repositories\otp4gb-py\GM_test\costs\AM\BUS_WALK_costs_20230608T0900-metrics.csv'
-GM_authority_test_matrix = pd.read_csv(GM_authority_test_path)
+# Should the compiled cost matrix be saved ?
+SAVE_COMPILED_COSTS = False
+COMPILED_COSTS_FILENAME = "compiled_COST_METRICS-metrics.csv"
+# ^ If save is True - a compiled cost matrix will be saved in the same directory 
+#       as the compiled lookup of requested trips with this filename
 
+#### Script #### 
+# Load response(s) into single matrix
+for i in range(len(RESPONSE_PATHS)): 
+    
+    if i == 0:
+        # Create compiled matrix
+        path = RESPONSE_PATHS[i]
+        print("Reading {}".format(path))
+        compiled_matrix = pd.read_csv(path)
+    else:
+        # Append new matrices to compiled matrix
+        path = RESPONSE_PATHS[i]
+        print("Reading {}".format(path))
+        matrix = pd.read_csv(path)
+        compiled_matrix = pd.concat([matrix, compiled_matrix], ignore_index=True)
+        compiled_matrix.reset_index(inplace=True, drop=True)
 
-# We want to find trips already requested and make a lookup so that we can avoid
-# making duplicate requests for these journeys.
+# Add OD_code
+compiled_matrix["od_code"] = (
+    compiled_matrix["origin_id"] + "_" + compiled_matrix["destination_id"]
+    )
 
-# Add north_run_2 outputs into final_run_responses, then add GM_authority test trips
-compiled_response_matrix = final_run_response_matrix.append(north_run2_response_matrix, ignore_index=True)
-# Add GM_authority test trips
-compiled_response_matrix = compiled_response_matrix.append(GM_authority_test_matrix, ignore_index=True)
+# If only one possible route has been found (number_itineraries == 1) then JT
+#  info will be stored as mean_duration and not min_duration. When this is the 
+#  case, set min_duration to be mean_duration. Then, sort by values & remove 
+#  duplicate trip OD_codes, keeping the first that occurs (will be the 
+#  shortest JT as a result of sorting the values)
 
+# Conditions one which selection to use
+conditions = (
+    np.isnan(compiled_matrix["number_itineraries"]),
+    compiled_matrix["number_itineraries"] == 0,
+    compiled_matrix["number_itineraries"] == 1,
+    compiled_matrix["number_itineraries"] > 1
+    )
 
+# Selections to use
+selections = [
+    1e99,
+    1e99,
+    compiled_matrix["mean_duration"],
+    compiled_matrix["min_duration"]
+    ]
 
-# Format columns
-compiled_response_matrix = compiled_response_matrix[['origin', 'destination', 'origin_id', 
-                                                     'destination_id']].copy()
+# Apply selections using conditions
+compiled_matrix["min_duration"] = np.select(conditions, selections)
+
+# Sort by values
+compiled_matrix = compiled_matrix.sort_values(by="min_duration")
+
+# Initial number of trips
+initial_len = len(compiled_matrix)
+
+# Remove duplicate trips within the compiled_matrix
+compiled_matrix = compiled_matrix.drop_duplicates("od_code",
+                                                   keep="first"
+                                                   )
+
+# If any of the 1e99 JTs remain, convert these back to nan so they won't
+#   throw off further analysis/cost calculations.
+compiled_matrix.loc[compiled_matrix["min_duration"] == 1e99, 
+                    "min_duration"] = np.nan
+
+# Print statistics on removed duplicate trips (above)
+final_len = len(compiled_matrix)
+print(initial_len - final_len, "duplicate trips have been removed.")
+print(len(compiled_matrix), "unique trips have been found")
+
+# Save the cost matrix??? 
+if SAVE_COMPILED_COSTS:
+    print("Saving compiled cost matrix to {}".format(os.path.join(OUT_PATH,
+                                        COMPILED_COSTS_FILENAME)))
+    compiled_matrix.to_csv(os.apth.join(OUT_PATH,
+                                        COMPILED_COSTS_FILENAME))
+else:
+    print("Skipped saving compiled cost matrix.")
+
+# Format required columns
+compiled_matrix = compiled_matrix[["origin", "destination", "origin_id", 
+                                   "destination_id", "od_code"]].copy()
 
 # Boolean check for trip presence in dataset
-compiled_response_matrix['check'] = True
-# Add OD_code
-compiled_response_matrix['od_code'] = compiled_response_matrix['origin_id'] + '_' + compiled_response_matrix['destination_id']
-
-initial_len = len(compiled_response_matrix)
-# Remove duplicate trips within the compiled_response_matrix
-compiled_response_matrix = compiled_response_matrix.drop_duplicates('od_code',
-                                                               keep='first')
-# Print statistics on removed duplicate trips (above)
-final_len = len(compiled_response_matrix)
-print(initial_len - final_len, 'duplicate trips have been removed.')
-print(len(compiled_response_matrix), 'unique trips have been found')
+compiled_matrix["check"] = True
 
 # Format matrix columns
-compiled_response_matrix = compiled_response_matrix[['od_code', 'check']].copy()
-# Rename columns
-compiled_response_matrix.rename(columns={'origin_id':'o',
-                                         'destination_id':'d'},
-                                inplace=True)
+compiled_matrix = compiled_matrix[["od_code", "check"]].copy()
+
 # Export data .
-compiled_response_matrix.to_csv(r'D:\Repositories\otp4gb-py\final_debug_run\for_FINAL_run_run_trip_reqs.csv',
-                                index = False)
+compiled_matrix.to_csv(os.path.join(OUT_PATH, OUT_FILENAME), 
+                       index = False)
 
-
-
-
-# To implement the lookup, see code below:
-    
-
-# =============================================================================
-# import pandas as pd
-# 
-# #Load file
-# lookup = pd.read_csv(r'E:\OTP_Processing\OTP outputs\first_north_run\costs\AM\first_run_trip_reqs.csv')
-# 
-# #set index
-# lookup.set_index('od_code', inplace=True, drop=True)
-# 
-# od_codes = ['E01028217_E01013880',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE',
-#             'E01028217_E01028175',
-#             'E01028217_E01027927',
-#             'E043228217_E01027347',
-#             'testtttttttttNNNOEOE']
-# 
-# import tqdm
-# 
-# for code in tqdm.tqdm(od_codes):
-#     if code in lookup.index:
-#         print(code, 'has previously been requested')
-#     else:
-#         print(code, 'must be requested NOW')
-# =============================================================================
-
+print("Data exported to:\n {}".format(os.path.join(OUT_PATH,
+                                                   OUT_FILENAME)))
