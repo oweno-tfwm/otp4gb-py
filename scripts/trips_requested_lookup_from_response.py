@@ -9,11 +9,11 @@ Script to create a lookup of already requested trips by OTP.
 Sometimes, VMs shut down overnight, or large OTP runs will be split over 
     numerous VM machines, leaving us with multiple files we don't want to 
     re-request. This script creates a lookup of previously requested trips
-    from (upto) multiple cost-metric files.
+    from multiple cost-metric output files.
 
 When OTP filters through provided data to determine requests to send to
     the server, if OTP identifies a that a trip from the lookup that has 
-    already been requested, skip this trip!
+    already been requested, it skips this trip.
     
 Inputs: 
     - OTP cost metrics data file(s) (contains prev. requested trips)
@@ -23,7 +23,7 @@ Output:
       provided OTP cost metric file(s) 
       
     - Optional: If enabled, the compiled cost metric (compiled from all input
-      metrix) will also be saved
+      metrics) will also be saved
     
 """
 #### Imports ####
@@ -32,7 +32,6 @@ import numpy as np
 import os
 
 #### Constants ####
-
 # Path to OTP cost metric files (supports multiple OTP outputs)
 RESPONSE_PATHS = [
     r"E:\OTP_Processing\OTP outputs\First OTP run (signalis)\BUS_WALK_costs_20230608T0900_COST_METRICS-metrics.csv"
@@ -118,10 +117,11 @@ print(len(compiled_matrix), "unique trips have been found")
 
 # Save the cost matrix??? 
 if SAVE_COMPILED_COSTS:
-    print("Saving compiled cost matrix to {}".format(os.path.join(OUT_PATH,
-                                        COMPILED_COSTS_FILENAME)))
-    compiled_matrix.to_csv(os.apth.join(OUT_PATH,
-                                        COMPILED_COSTS_FILENAME))
+    print("Saving compiled cost matrix to {}".format(os.path.join(OUT_PATH, COMPILED_COSTS_FILENAME)))
+    # Save compiled matrix
+    compiled_matrix.to_csv(os.path.join(OUT_PATH,
+                                        COMPILED_COSTS_FILENAME,
+                                        ))
 else:
     print("Skipped saving compiled cost matrix.")
 
@@ -137,7 +137,6 @@ compiled_matrix = compiled_matrix[["od_code", "check"]].copy()
 
 # Export data .
 compiled_matrix.to_csv(os.path.join(OUT_PATH, OUT_FILENAME), 
-                       index = False)
+                       index=False)
 
-print("Data exported to:\n {}".format(os.path.join(OUT_PATH,
-                                                   OUT_FILENAME)))
+print("Data exported to:\n {}".format(os.path.join(OUT_PATH, OUT_FILENAME)))
