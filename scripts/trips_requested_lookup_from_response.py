@@ -17,6 +17,11 @@ When OTP filters through provided data to determine requests to send to
     
 Inputs: 
     - OTP cost metrics data file(s) (contains prev. requested trips)
+        the metrics file must contain the following headers:
+           - origin_id
+           - destination_id
+           - mean_duration
+           - min_duration
     
 Output: 
     - Lookup table containing previously requested OD pair trips within the 
