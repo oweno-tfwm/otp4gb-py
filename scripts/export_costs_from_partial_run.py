@@ -121,7 +121,7 @@ def _write_matrix_files(
 
     metrics_file = matrix_file.with_name(matrix_file.stem + "-metrics.csv")
     matrix.to_csv(metrics_file, index=False)
-    print("Written cost metrics to {}\n\nThis can be used to create a lookup of trips requested".format(metrics_file))
+    print("Written cost metrics to {}\nThis can be used to create a lookup of trips requested".format(metrics_file))
 
 
 def mapcount(filename):
