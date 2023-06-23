@@ -69,7 +69,14 @@ ruc_lookup:
   path: ruc_lookup.csv
   id_column: zone_id
   ruc_column: ruc
-# List of destinations to exclude when calculating routing
+
+# Optional lookup of destinations to exclude when calculating routing
 irrelevant_destinations: 
   path: irrelevant_destinations.csv
   zone_column: zone_id
+
+# Optional lookup of OD pair trips requested in a previous run
+previous_trips:
+  path: previously_requested_trips.csv
+  od_column: od_code
+  
