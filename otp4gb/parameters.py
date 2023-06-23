@@ -21,6 +21,10 @@ from otp4gb import centroids, routing, util
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
 CROWFLY_DISTANCE_CRS = "EPSG:27700"
+
+ROOT_DIR = pathlib.Path().absolute()
+ASSET_DIR = ROOT_DIR / "assets"
+# TODO(MB) Add this as a lookup within config rather than hard-code.
 RUC_WEIGHTS = {
     "A1": 1,
     "B1": 1,
@@ -70,6 +74,15 @@ class RUCLookup:
     path: pathlib.Path
     id_column: str = "zone_id"
     ruc_column: str = "ruc"
+
+
+@dataclasses.dataclass
+class PreviousTrips:
+    """Path to previously requested trips & names of columns"""
+
+    path: pathlib.Path
+    od_column = "od_code"
+    check_column = "check"
 
 
 @dataclasses.dataclass
@@ -166,17 +179,46 @@ def _summarise_list(values: Sequence | np.ndarray, max_values: int = 10) -> str:
 def _load_ruc_lookup(data: RUCLookup, zones: np.ndarray) -> pd.Series:
     """Load RUC lookup data into Series of weights to apply."""
     LOG.info("Loading RUC lookup from %s", data.path.name)
-    lookup_data = pd.read_csv(data.path, usecols=[data.id_column, data.ruc_column])
+
+    lookup_data = pd.read_csv(ASSET_DIR / data.path, usecols=[data.id_column, data.ruc_column])
+
+    zones_df = pd.DataFrame(zones, index=zones)
+
+    # Assess how many centroids are within the lookup
+    combined = pd.merge(how="left",
+                        left=lookup_data,
+                        right=zones_df,
+                        left_on=data.id_column,
+                        right_index=True,
+                        indicator=True,
+                        )
+    # Number of zones matched to a ruc lookup code
+    matched_zones = combined[combined["_merge"] == "both"].copy()
+    # Number of zones that cannot be found within ruc lookup
+    zone_ids_missing = combined.loc[combined["_merge"] == "right_only"][data.id_column].copy()
+
+    if (len(matched_zones) == len(zones)) & (len(zone_ids_missing) == 0):
+        # All zones have been matched to a ruc code.
+        # Now, make ruc_lookup contain only zones ids that are within `zones` for when we
+        #   apply the distance weighting calculation
+
+        matched_zone_ids = matched_zones[data.id_column]
+
+        # Make the lookup smaller
+        ruc_lookup = lookup_data.loc[lookup_data[data.id_column].isin(matched_zone_ids)]
+
+        LOG.info(f"{len(zones)} zones matched to RUC classifications successfully")
+
+    else:
+        raise ValueError(
+            f"{len(zones)} centroids supplied but only {len(matched_zones)} matches "
+            f"with the supplied ruc lookup. {len(zone_ids_missing)} zone ids are missing"
+            f"from the lookup. Add these... {_summarise_list(zone_ids_missing)}"
+        )
+
     lookup: pd.Series = lookup_data.set_index(data.id_column, verify_integrity=True)[
         data.ruc_column
     ]
-
-    unknown_zones = lookup.index[~lookup.index.isin(zones)]
-    if len(unknown_zones) > 0:
-        raise ValueError(
-            f"{len(unknown_zones)} values in RUC lookup zones not "
-            f"found in centroids data: {_summarise_list(unknown_zones)}"
-        )
 
     # TODO(MB) Allow RUC lookup to include custom factors instead of RUC codes
     lookup = lookup.astype(str).str.upper()
@@ -201,14 +243,49 @@ def _load_ruc_lookup(data: RUCLookup, zones: np.ndarray) -> pd.Series:
     return lookup
 
 
+def _load_previous_trips(data: PreviousTrips) -> set:
+    """Load previously requested trips into a python set"""
+    # TODO(MB): remove the check_column from this if continuing to use a set of od_pairs
+    previous_trips = pd.read_csv(data.path, usecols=[data.od_column, data.check_column])
+
+    # Convert lookup to a set - think it will be faster to compare items to a set rather than a lookup
+    previous_od_trips = set(previous_trips[data.od_column])
+
+    return previous_od_trips
+
+
 def _load_irrelevant_destinations(
     data: IrrelevantDestinations, zones: np.ndarray
 ) -> np.ndarray | None:
     """Load array of destinations to exclude, return None if file is empty."""
     LOG.info("Loading irrelevant destinations from %s", data.path.name)
-    irrelevant_data = pd.read_csv(data.path, usecols=[data.zone_column])
-    irrelevant = irrelevant_data[data.zone_column].unique()
+    irrelevant_data = pd.read_csv(ASSET_DIR/data.path, usecols=[data.zone_column])
 
+    # Create zones as DF to merge with irrelevant data
+    zones_df = pd.DataFrame(zones, index=zones)
+
+    # Assess how many of supplied zones will be irrelevant destinations
+    combined = pd.merge(how="left",
+                        left=zones_df,
+                        right=irrelevant_data,
+                        left_index=True,
+                        right_on=data.zone_column,
+                        indicator=True,
+                        )
+
+    # Find zones that have been matched (irrelevant zones)
+    matched_zones = combined.loc[combined["_merge"] == "both"].copy()
+    matched_zone_ids = matched_zones[data.zone_column]
+
+    # Only care about matched zone ids.
+    # Those ["_merge"] indicators with "right_only" will be irrelevant zones within the `irrelevant_data` but
+    #   not present in `zones`.
+    # Those categorised as "left_only" will be zones from `zones` that are not within the `irrelevant_data`
+    #   lookup (in other words, they are relevant destinations)
+    # Thus, set `matched_zone_ids` as `irrelevant` and return
+    irrelevant = matched_zone_ids.unique()
+
+    # TODO: maybe remove this section below as should never needed given code above
     unknown_zones = irrelevant[~np.isin(irrelevant, zones)]
     if len(unknown_zones) > 0:
         raise ValueError(
@@ -232,6 +309,7 @@ def _build_calculation_parameters_iter(
     irrelevant_destinations: np.ndarray | None = None,
     distances: pd.DataFrame | None = None,
     distance_factors: pd.Series | None = None,
+    previous_trips_set: set | None = None,
     progress_bar: bool = True,
 ) -> Iterator[CalculationParameters]:
     """Generate calculation parameters, internal function for `build_calculation_parameters`."""
@@ -283,16 +361,36 @@ def _build_calculation_parameters_iter(
             columns=["origin", "destination"],
         )
 
+    # Remove any irrelevant destinations (perhaps no amenity in destination)
     if irrelevant_destinations is not None:
         exclude = od_pairs["destination"].isin(irrelevant_destinations)
         od_pairs = od_pairs.loc[~exclude]
         LOG.info(
-            "Dropped %s OD pairs with irrelevant destinations, %s remaining",
+            "Dropped %s OD pairs with irrelevant destinations (%s remaining)",
             f"{exclude.sum():,}",
             f"{len(od_pairs):,}",
         )
     else:
         LOG.info("No irrelevant destinations excluded")
+
+    # Remove any trips requested in a previous run
+    if previous_trips_set is not None:
+        # Create od_code on od_pair to remove trips
+        od_pairs["od_code"] = od_pairs["origin"] + "_" + od_pairs["destination"]
+
+        # Remove previously requested trips
+        remove = od_pairs.loc[od_pairs["od_code"].isin(previous_trips_set)]
+        od_pairs = od_pairs.loc[~ remove]
+
+        LOG.info(
+            "Dropped {} OD pairs for being previously requested. {} remaining".format(
+                remove.sum(),
+                len(od_pairs),
+            )
+        )
+
+        # Drop the od_code column (no longer needed)
+        od_pairs = od_pairs.drop(columns=["od_code"], inplace=True)
 
     if progress_bar:
         iterator = tqdm.tqdm(
@@ -328,6 +426,7 @@ def build_calculation_parameters(
     settings: CostSettings,
     ruc_lookup: RUCLookup | None = None,
     irrelevant_destinations: IrrelevantDestinations | None = None,
+    previous_trips: PreviousTrips | None = None,
     crowfly_distance_crs: str = CROWFLY_DISTANCE_CRS,
 ) -> list[CalculationParameters]:
     """Build a list of parameters for running `calculate_costs`.
@@ -347,6 +446,9 @@ def build_calculation_parameters(
     crowfly_distance_crs : str, default `CROWFLY_DISTANCE_CRS`
         Coordinate reference system to convert geometries to
         when calculating crow-fly distances.
+    previous_trips: IrrelevantDestinations, optional
+       File containing a lookup of od_pairs of trips requested
+       by a previous OTP run.
 
     Returns
     -------
@@ -363,6 +465,7 @@ def build_calculation_parameters(
     else:
         destinations = zones.destinations.set_index(zones.columns.id)[zone_columns]
 
+    # Check for & Load crowfly max distance filter
     if settings.crowfly_max_distance is not None and settings.crowfly_max_distance > 0:
         distances = _calculate_distance_matrix(
             origins,
@@ -372,17 +475,30 @@ def build_calculation_parameters(
     else:
         distances = None
 
+    # Check for & load RUC lookup
     if ruc_lookup is not None and distances is not None:
         distance_factors = _load_ruc_lookup(ruc_lookup, origins.index.values)
     else:
         distance_factors = None
 
+    # Check for & load irrelevant destinations lookup
     if irrelevant_destinations is not None:
         irrelevant = _load_irrelevant_destinations(
             irrelevant_destinations, origins.index.values
         )
     else:
         irrelevant = None
+
+    # Check for & load previously requested trips
+    if previous_trips is not None:
+        previous_trips_set = _load_previous_trips(previous_trips)
+
+        # Check the set is not empty
+        if len(previous_trips_set) == 0:
+            previous_trips_set = None
+
+    else:
+        previous_trips_set = None
 
     parameters: list[CalculationParameters] = []
     iterator = _build_calculation_parameters_iter(
@@ -393,6 +509,7 @@ def build_calculation_parameters(
         irrelevant_destinations=irrelevant,
         distances=distances,
         distance_factors=distance_factors,
+        previous_trips_set=previous_trips_set,
     )
 
     for params in iterator:

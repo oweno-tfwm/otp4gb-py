@@ -88,9 +88,19 @@ def main():
         server.start()
 
     logger.info("Loading centroids")
+
+    # Check if config.destination_centroids has been supplied
+    if len(config.destination_centroids.replace(" ", "")) == 0:
+        destination_centroids_path = None
+        logger.info("No destination centroids detected. Proceeding with {}".format(
+            config.centroids,
+        ))
+    else:
+        destination_centroids_path = pathlib.Path(ASSET_DIR) / config.destination_centroids
+
     centroids = load_centroids(
         pathlib.Path(ASSET_DIR) / config.centroids,
-        pathlib.Path(ASSET_DIR) / config.destination_centroids,
+        destination_centroids_path,
         # TODO(MB) Read parameters for config to define column names
         zone_columns=ZoneCentroidColumns(),
         extents=config.extents,
@@ -156,6 +166,7 @@ def main():
             )
             matrix_path.parent.mkdir(exist_ok=True, parents=True)
 
+            #TODO: Add requested trips here
             jobs = parameters.build_calculation_parameters(
                 zones=centroids,
                 settings=cost_settings,
