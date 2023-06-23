@@ -156,7 +156,12 @@ def calculate_distance_matrix(
         gpd.GeoSeries(distances["destination_centroid"])
     )
 
-    return distances.set_index(["origin", "destination"])["distance"]
+    distances = distances.set_index(["origin", "destination"])["distance"]
+    LOG.info(
+        "Calculated %s distances %s Nan values", len(distances), distances.isna().sum()
+    )
+
+    return distances
 
 
 def _summarise_list(values: Sequence | np.ndarray, max_values: int = 10) -> str:

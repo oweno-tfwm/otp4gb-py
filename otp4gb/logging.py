@@ -37,12 +37,17 @@ def get_logger(*args, **kwargs):
 
 
 # TODO(MB) Replace with logging module from caf.toolkit once released
-def initialise_logger(name: str, log_file: pathlib.Path) -> None:
+def initialise_logger(name: str, log_file: pathlib.Path, reset_handlers: bool = True) -> None:
     logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    if reset_handlers:
+        logger.handlers.clear()
 
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(logging.INFO)
     stream_handler.setFormatter(logging.Formatter("[{levelname}] {message}", style="{"))
+    logger.addHandler(stream_handler)
 
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
@@ -51,5 +56,6 @@ def initialise_logger(name: str, log_file: pathlib.Path) -> None:
             "{asctime} [{name:>20.20}] [{levelname:^8.8}] {message}", style="{"
         )
     )
+    logger.addHandler(file_handler)
 
     logger.debug("Initialised logger")
