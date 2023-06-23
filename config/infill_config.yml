@@ -1,0 +1,7 @@
+folders:
+  # - C:\Users\ukmjb018\OneDrive - WSP O365\WSP_Projects\TfN Secondment\WIC\OTP4GB-py Runs\OTP4GB-Py Folders\WIC Walk - 20230603
+  - C:\Users\ukmjb018\OneDrive - WSP O365\WSP_Projects\TfN Secondment\WIC\OTP4GB-py Runs\OTP4GB-Py Folders\WIC Cycle - 20230603
+  - C:\Users\ukmjb018\OneDrive - WSP O365\WSP_Projects\TfN Secondment\WIC\OTP4GB-py Runs\OTP4GB-Py Folders\WIC Bus North
+infill_columns:
+  mean_duration: 0.01666666 # seconds to minutes
+  mean_travel_distance: 0.001 # metres to km

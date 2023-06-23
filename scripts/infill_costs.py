@@ -11,8 +11,10 @@ import functools
 import pathlib
 import re
 import sys
-from typing import Any, Callable, NamedTuple, Sequence
+import textwrap
+from typing import Any, Callable, NamedTuple, Mapping
 
+import caf.toolkit
 import numpy as np
 import pandas as pd
 import pydantic
@@ -25,17 +27,22 @@ from pydantic import dataclasses, types
 from scipy import stats, optimize
 
 sys.path.extend((".", ".."))
+import otp4gb
 from otp4gb import centroids, config, cost, logging, parameters
 
 ##### CONSTANTS #####
-LOG = logging.get_logger(__name__)
+LOG = logging.get_logger(otp4gb.__package__ + ".infill_costs")
 
 
 ##### CLASSES #####
+class InfillParameters(caf.toolkit.BaseConfig):
+    folders: list[types.DirectoryPath]
+    infill_columns: dict[str, float]
+
+
 @dataclasses.dataclass
 class InfillArgs:
-    folder: types.DirectoryPath
-    infill_columns: tuple[str, ...] = ("mean_duration", "mean_travel_distance")
+    config: types.FilePath
 
     @classmethod
     def parse(cls) -> InfillArgs:
@@ -43,20 +50,11 @@ class InfillArgs:
             description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
         )
         parser.add_argument(
-            "folder",
-            type=pathlib.Path,
-            help="folder containing OTP4GB-py outputs to be infilled",
-        )
-        parser.add_argument(
-            "-c",
-            "--infill_columns",
-            nargs="*",
-            default=cls.infill_columns,
-            help="name(s) of columns to infill",
+            "config", type=pathlib.Path, help="path to infill config file"
         )
 
         args = parser.parse_args()
-        return InfillArgs(folder=args.folder, infill_columns=args.infill_columns)
+        return InfillArgs(config=args.config)
 
 
 class PlotType(enum.Enum):
@@ -131,10 +129,119 @@ class InfillMethod(enum.Enum):
     LOGARITHMIC = enum.auto()
 
 
-@dataclasses.dataclass
 class InfillFunction:
-    function: Callable[[np.ndarray], np.ndarray]
-    label: str
+    _MAX_LABEL_WIDTH = 20
+    _FMT = ".2f"
+    _function: Callable[[np.ndarray], np.ndarray]
+    _equation: str
+    _name: str
+
+    def __init__(self, method: InfillMethod, x: pd.Series, y: pd.Series) -> None:
+        setup_function = self._get_function(method)
+
+        try:
+            setup_function(x, y)
+        except RuntimeError as error:
+            LOG.error("Infilling fit error: %s", error)
+
+            self._equation = "y = NaN"
+            self._function = lambda arr: arr * np.nan
+            self._name = f"{method.name.replace('_', ' ').title()} Fit Error"
+
+    def __call__(self, distances: np.ndarray) -> np.ndarray:
+        """Calculate infill values based on `distances`."""
+        return self._function(distances)
+
+    @property
+    def label(self) -> str:
+        if len(self._name) > self._MAX_LABEL_WIDTH:
+            name = textwrap.fill(self._name, self._MAX_LABEL_WIDTH)
+        else:
+            name = self._name
+
+        equation = re.sub(r"y\s*=\s*", "", self._equation).strip()
+
+        if len(equation) <= self._MAX_LABEL_WIDTH:
+            return f"{name}\n$y={equation}$"
+
+        equation = textwrap.wrap(equation, self._MAX_LABEL_WIDTH)
+        equation = "".join(f"\n   ${i}$" for i in equation)
+
+        return f"{name}\n$y=${equation}"
+
+    def _get_function(
+        self, method: InfillMethod
+    ) -> Callable[[pd.Series, pd.Series], None]:
+        lookup: dict[InfillMethod, Callable] = {
+            InfillMethod.MEAN_RATIO: self._ratio,
+            InfillMethod.LINEAR: self._linear,
+            InfillMethod.POLYNOMIAL_2: functools.partial(self._polynomial, degree=2),
+            InfillMethod.POLYNOMIAL_3: functools.partial(self._polynomial, degree=3),
+            InfillMethod.POLYNOMIAL_4: functools.partial(self._polynomial, degree=4),
+            InfillMethod.EXPONENTIAL: self._exponential,
+            InfillMethod.LOGARITHMIC: self._logarithmic,
+        }
+
+        if method not in lookup:
+            raise ValueError(f"no function defined for method: '{method}'")
+
+        return lookup[method]
+
+    def _ratio(self, x: pd.Series, y: pd.Series) -> None:
+        ratio = np.mean(y / x)
+
+        self._function = lambda arr: arr * ratio
+        self._name = "Mean Ratio"
+        self._equation = f"y = {ratio:.2f}x"
+
+    def _linear(self, x: pd.Series, y: pd.Series) -> None:
+        result = stats.linregress(x, y)
+
+        self._function = lambda arr: (arr * result.slope) + result.intercept
+        self._name = "Linear Regression"
+        self._equation = f"y = {result.slope:.2f}x {result.intercept:+.2f}"
+
+    def _polynomial(self, x: pd.Series, y: pd.Series, degree: int) -> None:
+        poly = polynomial.Polynomial.fit(x, y, degree)
+        self._name = f"Polynomial degree {degree}"
+
+        self._equation = "y ="
+        for i, value in enumerate(reversed(poly.coef)):
+            power = degree - i
+
+            if i == 0:
+                self._equation += f"{value:.2f}"
+            else:
+                self._equation += f"{value:+.2f}"
+
+            if power > 1:
+                self._equation += f"x^{power}"
+            elif power == 1:
+                self._equation += "x"
+
+        self._function = poly
+
+    def _exponential(self, x: pd.Series, y: pd.Series) -> None:
+        def exp(arr, a, b, c):
+            return a * np.exp(b * arr) + c
+
+        fit = optimize.curve_fit(exp, x, y, (0, 0.5, 1))
+        a, b, c = fit[0]
+
+        self._function = functools.partial(exp, a=a, b=b, c=c)
+        self._name = "Exponential"
+        self._equation = rf"y = {a:.2f} e^{{{b:.2f}x}} {c:+.2f}"
+
+    def _logarithmic(self, x: pd.Series, y: pd.Series) -> None:
+        def log(arr, a, b, c):
+            return a * np.log(b * arr) + c
+
+        fit = optimize.curve_fit(log, x, y, (0, 0.5, 1))
+        a, b, c = fit[0]
+
+        self._function = functools.partial(log, a=a, b=b, c=c)
+        self._name = "Natural Log"
+        self._equation = rf"y = {a:.2f} \ln ({b:.2f}x) {c:+.2f}"
 
 
 ##### FUNCTIONS #####
@@ -164,7 +271,9 @@ def calculate_crow_fly(
         destinations = centroid_data.destinations
 
     return parameters.calculate_distance_matrix(
-        centroid_data.origins, destinations, parameters.CROWFLY_DISTANCE_CRS
+        centroid_data.origins.set_index(centroid_data.columns.id),
+        destinations.set_index(centroid_data.columns.id),
+        parameters.CROWFLY_DISTANCE_CRS,
     )
 
 
@@ -239,46 +348,10 @@ def plot(
 
         if fit_function is not None:
             x = np.arange(limit.min_x, limit.max_x, 1)
-            ax.plot(x, fit_function.function(x), "--", c="C1", label=fit_function.label)
-            ax.legend()
+            ax.plot(x, fit_function(x), "--", c="C1", label=fit_function.label)
+            ax.legend(loc="upper right")
 
     return fig
-
-
-def _infill_method_ratio(x: pd.Series, y: pd.Series) -> InfillFunction:
-    ratio = np.mean(y / x)
-
-    return InfillFunction(
-        function=lambda arr: arr * ratio, label=f"Mean Ratio\ny={ratio:.2f}x"
-    )
-
-
-def _infill_method_linear(x: pd.Series, y: pd.Series) -> InfillFunction:
-    result = stats.linregress(x, y)
-    return InfillFunction(
-        function=lambda arr: (arr * result.slope) + result.intercept,
-        label=f"Linear Regression\ny={result.slope:.2e}x + {result.intercept:.2e}",
-    )
-
-
-def _infill_method_polynomial(
-    x: pd.Series, y: pd.Series, degree: int
-) -> InfillFunction:
-    poly = polynomial.Polynomial.fit(x, y, degree)
-
-    label = f"Polynomial degree {degree}\n$y = "
-    for i, value in enumerate(reversed(poly.coef)):
-        power = degree - i
-        label += f"+ {value:.1e}"
-
-        if power > 1:
-            label += f"x^{power}"
-        elif power == 1:
-            label += "x"
-
-    label += "$"
-
-    return InfillFunction(function=poly, label=label)
 
 
 def infill_metric(
@@ -318,25 +391,8 @@ def infill_metric(
     missing = distances.index[~distances.index.isin(data.index)]
     LOG.info("Infilling %s values with %s method", f"{len(missing):,}", method)
 
-    infill_methods = {
-        InfillMethod.MEAN_RATIO: _infill_method_ratio,
-        InfillMethod.LINEAR: _infill_method_linear,
-        InfillMethod.POLYNOMIAL_2: functools.partial(
-            _infill_method_polynomial, degree=2
-        ),
-        InfillMethod.POLYNOMIAL_3: functools.partial(
-            _infill_method_polynomial, degree=3
-        ),
-        InfillMethod.POLYNOMIAL_4: functools.partial(
-            _infill_method_polynomial, degree=4
-        ),
-    }
-
-    if method not in infill_methods:
-        raise ValueError(f"unknown infilling method {method}")
-
-    infill_function = infill_methods[method](data[distances.name], data[metric.name])
-    calculated = infill_function.function(distances.loc[missing])
+    infill_function = InfillFunction(method, data[distances.name], data[metric.name])
+    calculated = infill_function(distances.loc[missing])
 
     if calculated.index.isin(metric.index).sum() > 0:
         raise ValueError("Oops recalculated existing metrics")
@@ -382,14 +438,22 @@ def infill_metric(
 
     LOG.info("Saved plots to %s", plot_file.name)
 
+    LOG.info(
+        "Infilled data contains %s valid values (of %s) for '%s'",
+        (~infilled.isna()).sum(),
+        len(infilled),
+        metric.name,
+    )
+
     return infilled
 
 
 def infill_costs(
     metrics_path: pathlib.Path,
-    columns: Sequence[str],
+    columns: Mapping[str, float],
     distances: pd.Series,
-    infill_folder: pathlib.Path,
+    output_folder: pathlib.Path,
+    methods: list[InfillMethod] | None = None,
 ) -> None:
     LOG.info("Reading '%s'", metrics_path)
     metrics = pd.read_csv(metrics_path, index_col=["origin", "destination"])
@@ -397,45 +461,68 @@ def infill_costs(
     if distances.isna().sum() > 0:
         raise ValueError(f"distances has {distances.isna().sum()} Nan values")
 
-    for method in InfillMethod:
-        plot_folder = infill_folder / f"plots - {method.name.lower()}"
-        plot_folder.mkdir(exist_ok=True)
+    if methods is None:
+        methods = list(InfillMethod)
+
+    for method in methods:
+        LOG.info(
+            "Using infilling method '%s' on columns: %s",
+            method.name,
+            [i for i in columns if i in metrics.columns],
+        )
+
+        method_folder = output_folder / f"infill - {method.name.lower()}"
+        method_folder.mkdir(exist_ok=True)
         infilled_metrics = []
 
-        for column in columns:
+        for column, factor in columns.items():
             if column not in metrics.columns:
                 LOG.error(
                     "Metric column '%s' not found in '%s'", column, metrics_path.name
                 )
                 continue
 
+            LOG.info("Multiplying '%s' column by %s before infilling", column, factor)
+
             infilled_metrics.append(
                 infill_metric(
-                    metrics[column],
+                    metrics[column] * factor,
                     distances,
-                    plot_folder / (metrics_path.stem + f"-{column}.pdf"),
+                    method_folder / (metrics_path.stem + f"-{column}.pdf"),
                     method,
                 )
             )
 
         infilled_df = pd.concat(infilled_metrics, axis=1)
 
-        out_path = infill_folder / (
-            metrics_path.stem + f"-infilled_{method.name.lower()}.csv"
-        )
+        out_path = method_folder / (metrics_path.stem + "-infilled.csv")
         infilled_df.to_csv(out_path)
         LOG.info("Written: %s", out_path)
 
+        produce_matrices(infilled_df, out_path)
 
-def main(params: config.ProcessConfig, arguments: InfillArgs) -> None:
-    logging.initialise_logger("", arguments.folder / "logs/infill_costs.log")
+
+def produce_matrices(infilled: pd.DataFrame, output_path: pathlib.Path) -> None:
+    for column in infilled:
+        data = infilled[column].unstack()
+
+        out_path = output_path.with_name(output_path.stem + f"-{column}.csv")
+        data.to_csv(out_path)
+        LOG.info("Written: %s", out_path)
+
+
+def main(
+    folder: pathlib.Path, params: config.ProcessConfig, infill_columns: dict[str, float]
+) -> None:
+    logging.initialise_logger(otp4gb.__package__, folder / "logs/infill_costs.log")
+    LOG.info("Infilling %s", folder)
 
     origin_path = config.ASSET_DIR / params.centroids
     destination_path = None
     if params.destination_centroids is not None:
         destination_path = config.ASSET_DIR / params.destination_centroids
 
-    distances = calculate_crow_fly(origin_path, destination_path, params.extents)
+    distances = calculate_crow_fly(origin_path, destination_path, None)
     distances = distances / 1000
     distances.name = "Crow-Fly Distance (km)"
 
@@ -451,13 +538,14 @@ def main(params: config.ProcessConfig, arguments: InfillArgs) -> None:
         )
 
         for modes in params.modes:
-            matrix_path = arguments.folder / (
+            matrix_path = folder / (
                 f"costs/{time_period.name}/"
-                f"{'_'.join(modes)}_costs_{travel_datetime:%Y%m%dT%H%M}-metrics.csv"
+                f"{'_'.join(modes)}_costs_{travel_datetime:%Y%m%dT%H%M}.csv"
             )
+            metrics_path = matrix_path.with_name(matrix_path.stem + "-metrics.csv")
 
-            if not matrix_path.is_file():
-                raise FileNotFoundError(matrix_path)
+            if not metrics_path.is_file():
+                raise FileNotFoundError(metrics_path)
 
             recalculated_path = matrix_path.with_name(
                 matrix_path.stem + "-recalculated.csv"
@@ -466,30 +554,28 @@ def main(params: config.ProcessConfig, arguments: InfillArgs) -> None:
                 recalculated_path.stem + "-metrics.csv"
             )
             if not recalculated_metrics_path.is_file():
-                responses_path = matrix_path.with_name(
-                    matrix_path.stem.replace("-metrics", ".csv-response_data.jsonl")
-                )
+                LOG.info("Recalculating costs: '%s'", metrics_path.name)
                 cost.cost_matrix_from_responses(
-                    responses_path,
+                    metrics_path.with_name(matrix_path.name + "-response_data.jsonl"),
                     recalculated_path,
                     params.iterinary_aggregation_method,
                 )
 
-            infill_folder = recalculated_metrics_path.parent / "infilled"
-            infill_folder.mkdir(exist_ok=True)
             infill_costs(
                 recalculated_metrics_path,
-                arguments.infill_columns,
+                infill_columns,
                 distances,
-                infill_folder,
+                metrics_path.parent,
             )
 
 
 def _run() -> None:
     args = InfillArgs.parse()
 
-    params = config.load_config(args.folder)
-    main(params, args)
+    params = InfillParameters.load_yaml(args.config)
+
+    for folder in params.folders:
+        main(folder, config.load_config(folder), params.infill_columns)
 
 
 if __name__ == "__main__":
