@@ -36,16 +36,21 @@ LOG = logging.get_logger(otp4gb.__package__ + ".infill_costs")
 
 ##### CLASSES #####
 class InfillParameters(caf.toolkit.BaseConfig):
+    """Config for `infill_costs` module."""
+
     folders: list[types.DirectoryPath]
     infill_columns: dict[str, float]
 
 
 @dataclasses.dataclass
 class InfillArgs:
+    """Arguments for `infill_costs` module."""
+
     config: types.FilePath
 
     @classmethod
     def parse(cls) -> InfillArgs:
+        """Parse command line arguments."""
         parser = argparse.ArgumentParser(
             description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
         )
@@ -58,6 +63,8 @@ class InfillArgs:
 
 
 class PlotType(enum.Enum):
+    """Type of plot to create."""
+
     HEXBIN = enum.auto()
     SCATTER = enum.auto()
 
@@ -68,6 +75,8 @@ class _Config:
 
 @dataclasses.dataclass(config=_Config)
 class PlotData:
+    """Data for plotting to a graph."""
+
     x: pd.Series
     y: pd.Series
     title: str | None = None
@@ -82,6 +91,7 @@ class PlotData:
     def filter(
         self, min_x: float, max_x: float, min_y: float, max_y: float
     ) -> PlotData:
+        """Filter data to within bounds given."""
         x_filter = (self.x > min_x) & (self.x < max_x)
         y_filter = (self.y > min_y) & (self.y < max_y)
 
@@ -91,12 +101,15 @@ class PlotData:
 
 
 class AxisLimit(NamedTuple):
+    """Limits for plot axis."""
+
     min_x: int | float | None = None
     max_x: int | float | None = None
     min_y: int | float | None = None
     max_y: int | float | None = None
 
     def infill(self, data: PlotData) -> AxisLimit:
+        """Update any missing values to min / max `data` values."""
         filtered = data.filter(
             min_x=-np.inf if self.min_x is None else self.min_x,
             max_x=np.inf if self.max_x is None else self.max_x,
@@ -120,6 +133,8 @@ class AxisLimit(NamedTuple):
 
 
 class InfillMethod(enum.Enum):
+    """Cost infilling methods."""
+
     MEAN_RATIO = enum.auto()
     LINEAR = enum.auto()
     POLYNOMIAL_2 = enum.auto()
@@ -130,6 +145,8 @@ class InfillMethod(enum.Enum):
 
 
 class InfillFunction:
+    """Functions for infilling costs using crow-fly distances."""
+
     _MAX_LABEL_WIDTH = 20
     _FMT = ".2f"
     _function: Callable[[np.ndarray], np.ndarray]
@@ -137,6 +154,15 @@ class InfillFunction:
     _name: str
 
     def __init__(self, method: InfillMethod, x: pd.Series, y: pd.Series) -> None:
+        """Fits infilling function to given data.
+
+        Parameters
+        ----------
+        method : InfillMethod
+            Method of infilling to use.
+        x, y : pd.Series
+            X and y values to fit infilling function to.
+        """
         setup_function = self._get_function(method)
 
         try:
@@ -154,6 +180,7 @@ class InfillFunction:
 
     @property
     def label(self) -> str:
+        """Plot label for infill function with equation."""
         if len(self._name) > self._MAX_LABEL_WIDTH:
             name = textwrap.fill(self._name, self._MAX_LABEL_WIDTH)
         else:
@@ -250,6 +277,22 @@ def calculate_crow_fly(
     destinations_path: pathlib.Path | None,
     extents: centroids.Bounds | None = None,
 ) -> pd.Series:
+    """Calculate crow-fly distances between origins and destination centroids.
+
+    Parameters
+    ----------
+    origins_path : pathlib.Path
+        CSV containing origin centroids with lat/lon coordinates.
+    destinations_path : pathlib.Path, optional
+        Optional destination centroids (origins used if not given).
+    extents : centroids.Bounds, optional
+        Extents to filter the centroids for.
+
+    Returns
+    -------
+    pd.Series
+        Crow-fly distances with origin and destination indices.
+    """
     if destinations_path is None:
         LOG.info("Calculating crow-fly distances for centroids '%s'", origins_path.name)
     else:
@@ -278,6 +321,20 @@ def calculate_crow_fly(
 
 
 def filter_responses(responses_path: pathlib.Path, max_count: int = 10) -> pathlib.Path:
+    """Filter responses with itineraries.
+
+    Parameters
+    ----------
+    responses_path : pathlib.Path
+        Path to JSON lines file containing OTP4GB responses.
+    max_count : int, default 10
+        Maximum number of responses to include in filter.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to file containing filtered responses.
+    """
     output_path = responses_path.with_name(responses_path.stem + "-filtered.jsonl")
     count = 0
 
@@ -304,6 +361,7 @@ def plot_axes(
     plot_type: PlotType,
     axis_limit: AxisLimit,
 ) -> None:
+    """Create plot on given axes."""
     if plot_type == PlotType.HEXBIN:
         hb = ax.hexbin(data.x, data.y, extent=axis_limit, mincnt=1)
         plt.colorbar(hb, ax=ax, label="Count", aspect=40)
@@ -335,6 +393,7 @@ def plot(
     fit_function: InfillFunction | None = None,
     subplots_kwargs: dict[str, Any] = dict(),
 ) -> figure.Figure:
+    """Create infill hexbin or scatter plots."""
     default_figure_kwargs = dict(figsize=(15, 10), constrained_layout=True)
     default_figure_kwargs.update(subplots_kwargs)
 
@@ -360,6 +419,26 @@ def infill_metric(
     plot_file: pathlib.Path,
     method: InfillMethod,
 ) -> pd.Series:
+    """Infill given `metric` using `method` given and plot graphs.
+
+    Parameters
+    ----------
+    metric : pd.Series
+        Series of values to infill, with indices
+        origin and destination.
+    distances : pd.Series
+        Crow-fly distances with the same indices as
+        `metric`.
+    plot_file : pathlib.Path
+        Path to save infill graphs to.
+    method : InfillMethod
+        Method of infilling to use.
+
+    Returns
+    -------
+    pd.Series
+        Infilled `metric`.
+    """
     metric = metric.dropna()
     metric.name = re.sub(r"[\s_]+", " ", metric.name).title()
 
@@ -455,6 +534,29 @@ def infill_costs(
     output_folder: pathlib.Path,
     methods: list[InfillMethod] | None = None,
 ) -> None:
+    """Infill cost metrics using given `methods` and output graphs.
+
+    Parameters
+    ----------
+    metrics_path : pathlib.Path
+        Cost metrics file for infilling.
+    columns : Mapping[str, float]
+        Column names for infilling and factors to apply
+        before infilling.
+    distances : pd.Series
+        Crow-fly distances for all OD pairs.
+    output_folder : pathlib.Path
+        Base folder to save outputs to, sub-folders are
+        created for each infill method.
+    methods : list[InfillMethod], optional
+        Methods of infilling to use, if not given all
+        infill methods will be used.
+
+    Raises
+    ------
+    ValueError
+        If distances has missing values.
+    """
     LOG.info("Reading '%s'", metrics_path)
     metrics = pd.read_csv(metrics_path, index_col=["origin", "destination"])
 
@@ -503,6 +605,16 @@ def infill_costs(
 
 
 def produce_matrices(infilled: pd.DataFrame, output_path: pathlib.Path) -> None:
+    """Write columns in `infilled` to separate square CSVs.
+
+    Parameters
+    ----------
+    infilled : pd.DataFrame
+        Infilled cost data.
+    output_path : pathlib.Path
+        Base path to write outputs to (column name will be appended
+        when writing the CSVs.)
+    """
     for column in infilled:
         data = infilled[column].unstack()
 
@@ -514,6 +626,23 @@ def produce_matrices(infilled: pd.DataFrame, output_path: pathlib.Path) -> None:
 def main(
     folder: pathlib.Path, params: config.ProcessConfig, infill_columns: dict[str, float]
 ) -> None:
+    """Infill costs in given OTP `folder`.
+
+    Parameters
+    ----------
+    folder : pathlib.Path
+        Folder containing OTP4GB config and outputs.
+    params : config.ProcessConfig
+        OTP4GB config from `folder`.
+    infill_columns : dict[str, float]
+        Names of columns to infill and factors to apply to values
+        before infilling.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the cost metrics file can't be found.
+    """
     logging.initialise_logger(otp4gb.__package__, folder / "logs/infill_costs.log")
     LOG.info("Infilling %s", folder)
 
