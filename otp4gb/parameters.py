@@ -204,8 +204,8 @@ def _load_ruc_lookup(data: RUCLookup, zones: np.ndarray) -> pd.Series:
 
         matched_zone_ids = matched_zones[data.id_column]
 
-        # Make the lookup smaller
-        ruc_lookup = lookup_data.loc[lookup_data[data.id_column].isin(matched_zone_ids)]
+        # Make the ruc lookup smaller
+        lookup_data = lookup_data.loc[lookup_data[data.id_column].isin(matched_zone_ids)]
 
         LOG.info(f"{len(zones)} zones matched to RUC classifications successfully")
 
@@ -433,7 +433,7 @@ def build_calculation_parameters(
 
     Parameters
     ----------
-    zone_centroids :ZoneCentroids
+    zones : centroids.ZoneCentroids
         Positions of zones to calculate costs between.
     settings : CostSettings
         Additional settings for calculating the costs.
@@ -536,7 +536,7 @@ def save_calculation_parameters(
 
     Parameters
     ----------
-    zone_centroids :ZoneCentroids
+    zones : centroids.ZoneCentroids
         Positions of zones to calculate costs between.
     settings : CostSettings
         Additional settings for calculating the costs.
