@@ -90,7 +90,7 @@ def main():
     logger.info("Loading centroids")
 
     # Check if config.destination_centroids has been supplied
-    if len(config.destination_centroids.replace(" ", "")) == 0:
+    if config.destination_centroids is None:
         destination_centroids_path = None
         logger.info("No destination centroids detected. Proceeding with {}".format(
             config.centroids,
