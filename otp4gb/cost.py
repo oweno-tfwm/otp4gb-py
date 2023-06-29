@@ -195,11 +195,8 @@ def _matrix_costs(result: CostResults) -> dict:
                 val = functools.reduce(lambda x, y: x + y.distance, it.legs, 0.0)
 
             else:
-                val = getattr(it, s)
+                val = getattr(it, s, np.nan)
 
-            # Set value to NaN if it doesn"t exist or isn"t set
-            if val is None:
-                val = np.nan
             values.append(val)
 
         matrix_values[f"mean_{s}"] = np.nanmean(values)
