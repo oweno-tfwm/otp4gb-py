@@ -35,11 +35,32 @@ LOG = logging.get_logger(otp4gb.__package__ + ".infill_costs")
 
 
 ##### CLASSES #####
+@dataclasses.dataclass
+class InclusiveRange:
+    """Inclusive range iterator."""
+    start: int
+    end: int
+
+    _current: int = 0
+
+    def __iter__(self):
+        self._current = self.start - 1
+        return self
+
+    def __next__(self) -> int:
+        self._current += 1
+        if self._current <= self.end:
+            return self._current
+
+        raise StopIteration()
+
+
 class InfillParameters(caf.toolkit.BaseConfig):
     """Config for `infill_costs` module."""
 
     folders: list[types.DirectoryPath]
     infill_columns: dict[str, float]
+    zero_cost_zones: InclusiveRange
 
 
 @dataclasses.dataclass
@@ -413,11 +434,38 @@ def plot(
     return fig
 
 
+def _set_zones_od(data: pd.Series, zones: np.ndarray, value: float) -> pd.Series:
+    """Set all zones with origin or destination in `zones` to `value`."""
+    existing_zones = np.unique(
+        np.concatenate(
+            [data.index.get_level_values(i).values for i in ("origin", "destination")]
+        )
+    )
+
+    new_origins = np.stack(
+        [np.repeat(zones, len(existing_zones)), np.tile(existing_zones, len(zones))]
+    )
+    new_destinations = np.stack(
+        [np.repeat(existing_zones, len(zones)), np.tile(zones, len(existing_zones))]
+    )
+    index_values = np.concatenate([new_origins, new_destinations], axis=1)
+
+    index = pd.MultiIndex.from_arrays(
+        [index_values[0], index_values[1]], names=["origin", "destination"]
+    )
+    update = pd.Series(value, index=index)
+
+    updated = pd.concat([data, update]).groupby(["origin", "destination"]).last()
+    updated.name = data.name
+    return updated
+
+
 def infill_metric(
     metric: pd.Series,
     distances: pd.Series,
     plot_file: pathlib.Path,
     method: InfillMethod,
+    zero_zones: np.ndarray | None = None,
 ) -> pd.Series:
     """Infill given `metric` using `method` given and plot graphs.
 
@@ -433,16 +481,21 @@ def infill_metric(
         Path to save infill graphs to.
     method : InfillMethod
         Method of infilling to use.
+    zero_zones: np.ndarray, optional
+        List of zones to be excluded from infilling and
+        set to 0 after infilling.
 
     Returns
     -------
     pd.Series
         Infilled `metric`.
     """
+    if zero_zones is not None:
+        metric = _set_zones_od(metric, zero_zones, np.nan)
+
     metric = metric.dropna()
     metric.name = re.sub(r"[\s_]+", " ", metric.name).title()
 
-    # TODO Figure out issue with zones in metric which aren't in distances
     data = pd.concat([metric, distances], axis=1)
 
     for column, values in data.items():
@@ -480,6 +533,9 @@ def infill_metric(
     infilled.name = "Infilled " + metric.name
 
     infilled_data = pd.concat([distances, infilled], axis=1)
+
+    if zero_zones is not None:
+        infilled = _set_zones_od(infilled, zero_zones, 0)
 
     plot_data.append(
         PlotData(
@@ -533,6 +589,7 @@ def infill_costs(
     distances: pd.Series,
     output_folder: pathlib.Path,
     methods: list[InfillMethod] | None = None,
+    zero_zones: list[int] | None = None,
 ) -> None:
     """Infill cost metrics using given `methods` and output graphs.
 
@@ -551,6 +608,9 @@ def infill_costs(
     methods : list[InfillMethod], optional
         Methods of infilling to use, if not given all
         infill methods will be used.
+    zero_zones: list[int], optional
+        List of zones to be excluded from infilling and
+        set to 0 after infilling.
 
     Raises
     ------
@@ -565,6 +625,9 @@ def infill_costs(
 
     if methods is None:
         methods = list(InfillMethod)
+
+    if zero_zones is not None:
+        zero_zones = np.array(zero_zones)
 
     for method in methods:
         LOG.info(
@@ -586,12 +649,14 @@ def infill_costs(
 
             LOG.info("Multiplying '%s' column by %s before infilling", column, factor)
 
+            assert isinstance(zero_zones, np.ndarray)
             infilled_metrics.append(
                 infill_metric(
                     metrics[column] * factor,
                     distances,
                     method_folder / (metrics_path.stem + f"-{column}.pdf"),
                     method,
+                    zero_zones=zero_zones,
                 )
             )
 
@@ -624,7 +689,10 @@ def produce_matrices(infilled: pd.DataFrame, output_path: pathlib.Path) -> None:
 
 
 def main(
-    folder: pathlib.Path, params: config.ProcessConfig, infill_columns: dict[str, float]
+    folder: pathlib.Path,
+    params: config.ProcessConfig,
+    infill_columns: dict[str, float],
+    zero_zones: list[int] | None = None,
 ) -> None:
     """Infill costs in given OTP `folder`.
 
@@ -637,6 +705,9 @@ def main(
     infill_columns : dict[str, float]
         Names of columns to infill and factors to apply to values
         before infilling.
+    zero_zones: list[int], optional
+        List of zones to be excluded from infilling and
+        set to 0 after infilling.
 
     Raises
     ------
@@ -695,6 +766,7 @@ def main(
                 infill_columns,
                 distances,
                 metrics_path.parent,
+                zero_zones=zero_zones,
             )
 
 
@@ -702,9 +774,15 @@ def _run() -> None:
     args = InfillArgs.parse()
 
     params = InfillParameters.load_yaml(args.config)
+    zero_zones = list(params.zero_cost_zones)
 
     for folder in params.folders:
-        main(folder, config.load_config(folder), params.infill_columns)
+        main(
+            folder,
+            config.load_config(folder),
+            params.infill_columns,
+            zero_zones=zero_zones,
+        )
 
 
 if __name__ == "__main__":
