@@ -38,6 +38,7 @@ LOG = logging.get_logger(otp4gb.__package__ + ".infill_costs")
 @dataclasses.dataclass
 class InclusiveRange:
     """Inclusive range iterator."""
+
     start: int
     end: int
 
@@ -163,6 +164,40 @@ class InfillMethod(enum.Enum):
     POLYNOMIAL_4 = enum.auto()
     EXPONENTIAL = enum.auto()
     LOGARITHMIC = enum.auto()
+
+
+# TODO Integrate this class with all infilling functions to determine outliers
+@dataclasses.dataclass(config=_Config)
+class CurveFit:
+    """Fits data to curves using `scipy.optimize.curve_fit` and calculates outliers."""
+
+    popt: np.ndarray
+    fit_curve: tuple[np.ndarray, np.ndarray]
+    outlier_mask: np.ndarray
+    outlier_quantile: float
+
+    @staticmethod
+    def fit(
+        func: Callable,
+        x_data: np.ndarray,
+        y_data: np.ndarray,
+        outlier_quantile: float = 0.95,
+        **kwargs,
+    ):
+        popt, pcov, info, msg, ier = optimize.curve_fit(
+            func, x_data, y_data, full_output=True, **kwargs
+        )
+
+        residual_squared = info["fvec"] ** 2
+        outlier_value = np.quantile(residual_squared, outlier_quantile)
+        outlier_mask = residual_squared >= outlier_value
+
+        return CurveFit(
+            popt=popt,
+            fit_curve=(x_data, func(x_data, *popt)),
+            outlier_mask=outlier_mask,
+            outlier_quantile=outlier_quantile,
+        )
 
 
 class InfillFunction:
