@@ -12,7 +12,7 @@ import pathlib
 import re
 import sys
 import textwrap
-from typing import Any, Callable, NamedTuple, Mapping
+from typing import Any, Callable, NamedTuple, Mapping, Optional
 
 import caf.toolkit
 import numpy as np
@@ -102,6 +102,7 @@ class PlotData:
     x: pd.Series
     y: pd.Series
     title: str | None = None
+    outlier_indices: pd.Index | None = None
 
     @pydantic.validator("y")
     def _check_index(cls, value: pd.Series, values) -> pd.Series:
@@ -172,31 +173,38 @@ class CurveFit:
     """Fits data to curves using `scipy.optimize.curve_fit` and calculates outliers."""
 
     popt: np.ndarray
-    fit_curve: tuple[np.ndarray, np.ndarray]
     outlier_mask: np.ndarray
-    outlier_quantile: float
+    outlier_quantile: Optional[float]
 
-    @staticmethod
+    @classmethod
     def fit(
+        cls,
         func: Callable,
         x_data: np.ndarray,
         y_data: np.ndarray,
-        outlier_quantile: float = 0.95,
+        outlier_quantile: float | None = 0.9999,
         **kwargs,
     ):
         popt, pcov, info, msg, ier = optimize.curve_fit(
             func, x_data, y_data, full_output=True, **kwargs
         )
 
-        residual_squared = info["fvec"] ** 2
-        outlier_value = np.quantile(residual_squared, outlier_quantile)
-        outlier_mask = residual_squared >= outlier_value
+        if outlier_quantile is not None:
+            # TODO Find better method for calculating outlier instead of quantile
+            residual_squared = info["fvec"] ** 2
+            outlier_value = np.quantile(residual_squared, outlier_quantile)
+            outlier_mask = residual_squared >= outlier_value
+
+            excluded_fit = cls.fit(
+                func, x_data[~outlier_mask], y_data[~outlier_mask], None, **kwargs
+            )
+            popt = excluded_fit.popt
+
+        else:
+            outlier_mask = np.full(x_data.shape, False)
 
         return CurveFit(
-            popt=popt,
-            fit_curve=(x_data, func(x_data, *popt)),
-            outlier_mask=outlier_mask,
-            outlier_quantile=outlier_quantile,
+            popt=popt, outlier_mask=outlier_mask, outlier_quantile=outlier_quantile
         )
 
 
@@ -208,6 +216,7 @@ class InfillFunction:
     _function: Callable[[np.ndarray], np.ndarray]
     _equation: str
     _name: str
+    outlier_indices: pd.MultiIndex
 
     def __init__(self, method: InfillMethod, x: pd.Series, y: pd.Series) -> None:
         """Fits infilling function to given data.
@@ -220,6 +229,9 @@ class InfillFunction:
             X and y values to fit infilling function to.
         """
         setup_function = self._get_function(method)
+        self.outlier_indices = pd.MultiIndex.from_tuples(
+            [], names=["origin", "destination"]
+        )
 
         try:
             setup_function(x, y)
@@ -278,18 +290,44 @@ class InfillFunction:
         self._equation = f"y = {ratio:.2f}x"
 
     def _linear(self, x: pd.Series, y: pd.Series) -> None:
-        result = stats.linregress(x, y)
+        def line(arr, gradient, intercept):
+            return (arr * gradient) + intercept
 
-        self._function = lambda arr: (arr * result.slope) + result.intercept
+        fit = CurveFit.fit(line, x, y)
+        gradient, intercept = fit.popt
+
+        self._function = lambda arr: line(arr, gradient, intercept)
         self._name = "Linear Regression"
-        self._equation = f"y = {result.slope:.2f}x {result.intercept:+.2f}"
+        self._equation = f"y = {gradient:.2f}x {intercept:+.2f}"
+        self.outlier_indices = x.index[fit.outlier_mask]
 
     def _polynomial(self, x: pd.Series, y: pd.Series, degree: int) -> None:
-        poly = polynomial.Polynomial.fit(x, y, degree)
+        def poly5(x, a, b, c, d, e, f):
+            return a * x**5 + b * x**4 + c * x**3 + d * x**2 + e * x + f
+
+        def poly4(x, b, c, d, e, f):
+            return b * x**4 + c * x**3 + d * x**2 + e * x + f
+
+        def poly3(x, c, d, e, f):
+            return c * x**3 + d * x**2 + e * x + f
+
+        def poly2(x, d, e, f):
+            return d * x**2 + e * x + f
+
+        degree_lookup: dict[int, Callable] = {5: poly5, 4: poly4, 3: poly3, 2: poly2}
+
+        if degree not in degree_lookup:
+            raise ValueError(
+                f"function not defined for polynomial with degree {degree}, "
+                f"only defined for {', '.join(str(i) for i in degree_lookup)}"
+            )
+
+        fit = CurveFit.fit(degree_lookup[degree], x, y)
+
         self._name = f"Polynomial degree {degree}"
 
         self._equation = "y ="
-        for i, value in enumerate(reversed(poly.coef)):
+        for i, value in enumerate(fit.popt):
             power = degree - i
 
             if i == 0:
@@ -302,29 +340,32 @@ class InfillFunction:
             elif power == 1:
                 self._equation += "x"
 
-        self._function = poly
+        self._function = lambda arr: degree_lookup[degree](arr, *list(fit.popt))
+        self.outlier_indices = x.index[fit.outlier_mask]
 
     def _exponential(self, x: pd.Series, y: pd.Series) -> None:
         def exp(arr, a, b, c):
             return a * np.exp(b * arr) + c
 
-        fit = optimize.curve_fit(exp, x, y, (0, 0.5, 1))
-        a, b, c = fit[0]
+        fit = CurveFit.fit(exp, x, y)
+        a, b, c = fit.popt
 
         self._function = functools.partial(exp, a=a, b=b, c=c)
         self._name = "Exponential"
         self._equation = rf"y = {a:.2f} e^{{{b:.2f}x}} {c:+.2f}"
+        self.outlier_indices = x.index[fit.outlier_mask]
 
     def _logarithmic(self, x: pd.Series, y: pd.Series) -> None:
         def log(arr, a, b, c):
             return a * np.log(b * arr) + c
 
-        fit = optimize.curve_fit(log, x, y, (0, 0.5, 1))
-        a, b, c = fit[0]
+        fit = CurveFit.fit(log, x, y)
+        a, b, c = fit.popt
 
         self._function = functools.partial(log, a=a, b=b, c=c)
         self._name = "Natural Log"
         self._equation = rf"y = {a:.2f} \ln ({b:.2f}x) {c:+.2f}"
+        self.outlier_indices = x.index[fit.outlier_mask]
 
 
 ##### FUNCTIONS #####
@@ -464,6 +505,16 @@ def plot(
         if fit_function is not None:
             x = np.arange(limit.min_x, limit.max_x, 1)
             ax.plot(x, fit_function(x), "--", c="C1", label=fit_function.label)
+
+            if data.outlier_indices is not None and len(data.outlier_indices) > 0:
+                ax.scatter(
+                    data.x.loc[data.outlier_indices],
+                    data.y.loc[data.outlier_indices],
+                    c="C2",
+                    label=f"{len(data.outlier_indices):,} Outliers "
+                    f"({len(data.outlier_indices) / len(data.x):.0%})",
+                )
+
             ax.legend(loc="upper right")
 
     return fig
@@ -547,25 +598,40 @@ def infill_metric(
     )
     LOG.info(message)
 
+    infill_indices = distances.index[~distances.index.isin(data.index)]
+    infill_function = InfillFunction(method, data[distances.name], data[metric.name])
+
+    infill_indices = pd.MultiIndex.from_tuples(
+        infill_indices.to_flat_index().tolist()
+        + infill_function.outlier_indices.to_flat_index().tolist()
+    )
+
+    LOG.info(
+        "Infilling %s values with %s method, %s of which are outliers",
+        f"{len(infill_indices):,}",
+        method,
+        f"{len(infill_function.outlier_indices):,}",
+    )
+    calculated = infill_function(distances.loc[infill_indices])
+
+    if calculated.index.isin(metric.index).sum() > 0:
+        LOG.warning(
+            "Recalculating %s existing metrics",
+            calculated.index.isin(metric.index).sum(),
+        )
+
     plot_data = [
         PlotData(
             x=data[distances.name],
             y=data[metric.name],
             title=f"Before Infilling\n{metric.name} vs {distances.name}",
+            outlier_indices=infill_function.outlier_indices,
         )
     ]
 
-    missing = distances.index[~distances.index.isin(data.index)]
-    LOG.info("Infilling %s values with %s method", f"{len(missing):,}", method)
-
-    infill_function = InfillFunction(method, data[distances.name], data[metric.name])
-    calculated = infill_function(distances.loc[missing])
-
-    if calculated.index.isin(metric.index).sum() > 0:
-        raise ValueError("Oops recalculated existing metrics")
-
     infilled = pd.concat([metric, calculated], axis=0)
     infilled.name = "Infilled " + metric.name
+    infilled = infilled.groupby(infilled.index.names).last()
 
     infilled_data = pd.concat([distances, infilled], axis=1)
 
@@ -574,8 +640,8 @@ def infill_metric(
 
     plot_data.append(
         PlotData(
-            x=infilled_data.loc[missing, distances.name],
-            y=infilled_data.loc[missing, infilled.name],
+            x=infilled_data.loc[infill_indices, distances.name],
+            y=infilled_data.loc[infill_indices, infilled.name],
             title=f"Only {infilled.name} vs {distances.name}",
         )
     )
