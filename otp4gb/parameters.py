@@ -260,44 +260,17 @@ def _load_irrelevant_destinations(
     LOG.info("Loading irrelevant destinations from %s", data.path.name)
     irrelevant_data = pd.read_csv(ASSET_DIR / data.path, usecols=[data.zone_column])
 
-    # Create zones as DF to merge with irrelevant data
-    zones_df = pd.DataFrame(zones, index=zones)
+    irrelevant = irrelevant_data[data.zone_column].unique()
+    matched_irrelevant = np.isin(irrelevant, zones)
 
-    # Assess how many of supplied zones will be irrelevant destinations
-    combined = pd.merge(how="left",
-                        left=zones_df,
-                        right=irrelevant_data,
-                        left_index=True,
-                        right_on=data.zone_column,
-                        indicator=True,
-                        )
-
-    # Find zones that have been matched (irrelevant zones)
-    matched_zones = combined.loc[combined["_merge"] == "both"].copy()
-    matched_zone_ids = matched_zones[data.zone_column]
-
-    # Only care about matched zone ids.
-    # Those ["_merge"] indicators with "right_only" will be irrelevant zones within the `irrelevant_data` but
-    #   not present in `zones`.
-    # Those categorised as "left_only" will be zones from `zones` that are not within the `irrelevant_data`
-    #   lookup (in other words, they are relevant destinations)
-    # Thus, set `matched_zone_ids` as `irrelevant` and return
-    irrelevant = matched_zone_ids.unique()
-
-    # TODO: maybe remove this section below as should never needed given code above
-    unknown_zones = irrelevant[~np.isin(irrelevant, zones)]
-    if len(unknown_zones) > 0:
-        raise ValueError(
-            f"{len(unknown_zones)} zones in irrelevant destinations not "
-            f"found in centroids data: {_summarise_list(unknown_zones)}"
-        )
-
-    LOG.info("Given %s unique destinations to exclude", len(irrelevant))
+    LOG.info("Given %s unique destinations to exclude",
+             len(matched_irrelevant)
+             )
 
     if len(irrelevant) == 0:
         return None
 
-    return irrelevant
+    return matched_irrelevant
 
 
 def _build_calculation_parameters_iter(
