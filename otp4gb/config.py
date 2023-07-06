@@ -56,7 +56,7 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     crowfly_max_distance: Optional[float] = None
     ruc_lookup: Optional[parameters.RUCLookup] = None
     irrelevant_destinations: Optional[parameters.IrrelevantDestinations] = None
-    previous_trips: Optional[parameters.PreviousTrips]
+    previous_trips: Optional[parameters.PreviousTrips] = None
 
     # Makes a classmethod not recognised by pylint, hence disabling self check
     @pydantic.validator("extents", pre=True)
