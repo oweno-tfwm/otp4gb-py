@@ -181,43 +181,31 @@ def _load_ruc_lookup(data: RUCLookup, zones: np.ndarray) -> pd.Series:
 
     lookup_data = pd.read_csv(ASSET_DIR / data.path, usecols=[data.id_column, data.ruc_column])
 
-    zones_df = pd.DataFrame(zones, index=zones)
+    lookup: pd.Series = lookup_data.set_index(data.id_column, verify_integrity=True)[
+        data.ruc_column
+    ]
 
-    # Assess how many centroids are within the lookup
-    combined = pd.merge(how="left",
-                        left=lookup_data,
-                        right=zones_df,
-                        left_on=data.id_column,
-                        right_index=True,
-                        indicator=True,
-                        )
-    # Number of zones matched to a ruc lookup code
-    matched_zones = combined[combined["_merge"] == "both"].copy()
-    # Number of zones that cannot be found within ruc lookup
-    zone_ids_missing = combined.loc[combined["_merge"] == "right_only"][data.id_column].copy()
+    matched_zones = zones[np.isin(zones, lookup.index)]
+    unmatched_zones = zones[~ np.isin(zones, lookup.index)]
 
-    if (len(matched_zones) == len(zones)) & (len(zone_ids_missing) == 0):
+    if (len(matched_zones) == len(zones)) & (len(unmatched_zones) == 0):
         # All zones have been matched to a ruc code.
         # Now, make ruc_lookup contain only zones ids that are within `zones` for when we
         #   apply the distance weighting calculation
 
-        matched_zone_ids = matched_zones[data.id_column]
-
-        # Make the ruc lookup smaller
-        lookup_data = lookup_data.loc[lookup_data[data.id_column].isin(matched_zone_ids)]
+        lookup_data = lookup_data.loc[lookup_data[data.id_column].isin(matched_zones)]
+        lookup: pd.Series = lookup_data.set_index(data.id_column, verify_integrity=True)[
+            data.ruc_column
+        ]
 
         LOG.info(f"{len(zones)} zones matched to RUC classifications successfully")
 
     else:
         raise ValueError(
             f"{len(zones)} centroids supplied but only {len(matched_zones)} matches "
-            f"with the supplied ruc lookup. {len(zone_ids_missing)} zone ids are missing"
-            f"from the lookup. Add these... {_summarise_list(zone_ids_missing)}"
+            f"with the supplied ruc lookup. {len(unmatched_zones)} zone ids are missing"
+            f"from the lookup. Add these... {_summarise_list(unmatched_zones)}"
         )
-
-    lookup: pd.Series = lookup_data.set_index(data.id_column, verify_integrity=True)[
-        data.ruc_column
-    ]
 
     # TODO(MB) Allow RUC lookup to include custom factors instead of RUC codes
     lookup = lookup.astype(str).str.upper()
