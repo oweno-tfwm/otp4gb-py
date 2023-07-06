@@ -391,6 +391,8 @@ def _build_calculation_parameters_iter(
 
         # Drop the od_code column (no longer needed)
         od_pairs = od_pairs.drop(columns=["od_code"], inplace=True)
+    else:
+        LOG.info("No previous trips lookup provided")
 
     if progress_bar:
         iterator = tqdm.tqdm(
