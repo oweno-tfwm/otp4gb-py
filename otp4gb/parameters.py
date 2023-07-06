@@ -379,7 +379,7 @@ def _build_calculation_parameters_iter(
         od_pairs["od_code"] = od_pairs["origin"] + "_" + od_pairs["destination"]
 
         # Remove previously requested trips
-        remove = od_pairs.loc[od_pairs["od_code"].isin(previous_trips_set)]
+        remove = od_pairs["od_code"].isin(previous_trips_set)
         od_pairs = od_pairs.loc[~ remove]
 
         LOG.info(
