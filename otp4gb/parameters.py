@@ -17,7 +17,6 @@ import tqdm
 
 from otp4gb import centroids, routing, util
 
-
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
 CROWFLY_DISTANCE_CRS = "EPSG:27700"
@@ -112,7 +111,7 @@ def _to_crs(data: gpd.GeoDataFrame, crs: str, name: str) -> gpd.GeoDataFrame:
     invalid_after: pd.Series = ~data.is_valid
     if not invalid_before.equals(invalid_after):
         raise ValueError(
-            f"{invalid_after.sum()} ({invalid_after.sum()/len(data):.0%}) "
+            f"{invalid_after.sum()} ({invalid_after.sum() / len(data):.0%}) "
             f"invalid features after converting {name} from {original_crs} to {crs} "
         )
 
@@ -120,7 +119,7 @@ def _to_crs(data: gpd.GeoDataFrame, crs: str, name: str) -> gpd.GeoDataFrame:
 
 
 def _calculate_distance_matrix(
-    origins: gpd.GeoDataFrame, destinations: gpd.GeoDataFrame, crs: str
+        origins: gpd.GeoDataFrame, destinations: gpd.GeoDataFrame, crs: str
 ) -> pd.DataFrame:
     """Calculate distances between all `origins` and `destinations`.
 
@@ -255,11 +254,11 @@ def _load_previous_trips(data: PreviousTrips) -> set:
 
 
 def _load_irrelevant_destinations(
-    data: IrrelevantDestinations, zones: np.ndarray
+        data: IrrelevantDestinations, zones: np.ndarray
 ) -> np.ndarray | None:
     """Load array of destinations to exclude, return None if file is empty."""
     LOG.info("Loading irrelevant destinations from %s", data.path.name)
-    irrelevant_data = pd.read_csv(ASSET_DIR/data.path, usecols=[data.zone_column])
+    irrelevant_data = pd.read_csv(ASSET_DIR / data.path, usecols=[data.zone_column])
 
     # Create zones as DF to merge with irrelevant data
     zones_df = pd.DataFrame(zones, index=zones)
@@ -302,15 +301,15 @@ def _load_irrelevant_destinations(
 
 
 def _build_calculation_parameters_iter(
-    settings: CostSettings,
-    columns: centroids.ZoneCentroidColumns,
-    origins: gpd.GeoDataFrame,
-    destinations: gpd.GeoDataFrame | None = None,
-    irrelevant_destinations: np.ndarray | None = None,
-    distances: pd.DataFrame | None = None,
-    distance_factors: pd.Series | None = None,
-    previous_trips_set: set | None = None,
-    progress_bar: bool = True,
+        settings: CostSettings,
+        columns: centroids.ZoneCentroidColumns,
+        origins: gpd.GeoDataFrame,
+        destinations: gpd.GeoDataFrame | None = None,
+        irrelevant_destinations: np.ndarray | None = None,
+        distances: pd.DataFrame | None = None,
+        distance_factors: pd.Series | None = None,
+        previous_trips_set: set | None = None,
+        progress_bar: bool = True,
 ) -> Iterator[CalculationParameters]:
     """Generate calculation parameters, internal function for `build_calculation_parameters`."""
 
@@ -345,7 +344,7 @@ def _build_calculation_parameters_iter(
         if distances is not None:
             od_pairs = distances.loc[
                 distances <= settings.crowfly_max_distance
-            ].index.to_frame(index=False)
+                ].index.to_frame(index=False)
             LOG.info(
                 "Dropped %s requests with crow-fly distance > %s (%s remaining)",
                 f"{len(distances) - len(od_pairs):,}",
@@ -383,10 +382,9 @@ def _build_calculation_parameters_iter(
         od_pairs = od_pairs.loc[~ remove]
 
         LOG.info(
-            "Dropped {} OD pairs for being previously requested. {} remaining".format(
-                remove.sum(),
-                len(od_pairs),
-            )
+            "Dropped %s OD pairs for being previously requested. %s remaining",
+            remove.sum(),
+            len(od_pairs),
         )
 
         # Drop the od_code column (no longer needed)
@@ -424,12 +422,12 @@ def _build_calculation_parameters_iter(
 
 
 def build_calculation_parameters(
-    zones: centroids.ZoneCentroids,
-    settings: CostSettings,
-    ruc_lookup: RUCLookup | None = None,
-    irrelevant_destinations: IrrelevantDestinations | None = None,
-    previous_trips: PreviousTrips | None = None,
-    crowfly_distance_crs: str = CROWFLY_DISTANCE_CRS,
+        zones: centroids.ZoneCentroids,
+        settings: CostSettings,
+        ruc_lookup: RUCLookup | None = None,
+        irrelevant_destinations: IrrelevantDestinations | None = None,
+        previous_trips: PreviousTrips | None = None,
+        crowfly_distance_crs: str = CROWFLY_DISTANCE_CRS,
 ) -> list[CalculationParameters]:
     """Build a list of parameters for running `calculate_costs`.
 
@@ -529,10 +527,10 @@ def build_calculation_parameters(
 
 
 def save_calculation_parameters(
-    zones: centroids.ZoneCentroids,
-    settings: CostSettings,
-    output_file: pathlib.Path,
-    **kwargs,
+        zones: centroids.ZoneCentroids,
+        settings: CostSettings,
+        output_file: pathlib.Path,
+        **kwargs,
 ) -> pathlib.Path:
     """Build calibration parameters and save to JSON lines file.
 
