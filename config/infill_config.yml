@@ -14,9 +14,8 @@ zero_cost_zones:
 infill_methods:
   - mean_ratio
   - linear
-  - polynomial_2
-  - exponential
+  - x_plus_logx
   - logarithmic
 
-outlier_method: stddev
-outlier_cutoff: 5
+outlier_method: geh
+outlier_cutoff: 10

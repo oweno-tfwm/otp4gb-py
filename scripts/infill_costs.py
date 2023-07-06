@@ -31,6 +31,7 @@ from otp4gb import centroids, config, cost, logging, parameters
 
 ##### CONSTANTS #####
 LOG = logging.get_logger(otp4gb.__package__ + ".infill_costs")
+MARKER_SIZE = 10
 
 
 ##### CLASSES #####
@@ -65,6 +66,7 @@ class InfillMethod(enum.StrEnum):
     POLYNOMIAL_4 = enum.auto()
     EXPONENTIAL = enum.auto()
     LOGARITHMIC = enum.auto()
+    X_PLUS_LOGX = enum.auto()
 
 
 class OutlierMethod(enum.StrEnum):
@@ -372,6 +374,7 @@ class InfillFunction:
             InfillMethod.POLYNOMIAL_4: functools.partial(self._polynomial, degree=4),
             InfillMethod.EXPONENTIAL: self._exponential,
             InfillMethod.LOGARITHMIC: self._logarithmic,
+            InfillMethod.X_PLUS_LOGX: self._x_plus_logx,
         }
 
         if method not in lookup:
@@ -379,9 +382,11 @@ class InfillFunction:
 
         return lookup[method]
 
-    def _fit(self, func: CurveFunction, x: pd.Series, y: pd.Series) -> CurveFit:
+    def _fit(
+        self, func: CurveFunction, x: pd.Series, y: pd.Series, **kwargs
+    ) -> CurveFit:
         self._curve = CurveFit.fit(
-            func, x, y, self._outlier_method, self._outlier_cutoff
+            func, x, y, self._outlier_method, self._outlier_cutoff, **kwargs
         )
         assert isinstance(self._curve, CurveFit)
 
@@ -469,7 +474,17 @@ class InfillFunction:
         a, b, c = self._curve.popt
 
         self._name = "Natural Log"
-        self._equation = rf"y = {a:.2f} \ln ({b:.2f}x) {c:+.2f}"
+        self._equation = rf"y = {a:.2f} \ln({b:.2f}x) {c:+.2f}"
+
+    def _x_plus_logx(self, x: pd.Series, y: pd.Series) -> None:
+        def log(arr, a, b):
+            return (a * arr) + b * np.log(arr + 1)
+
+        self._curve = self._fit(log, x, y, p0=(1, 10))
+        a, b = self._curve.popt
+
+        self._name = "Linear & Logarithmic"
+        self._equation = rf"y = {a:.2f}x {b:+.2f} \cdot \ln(x + 1)"
 
 
 ##### FUNCTIONS #####
@@ -573,7 +588,9 @@ def plot_axes(
         plt.colorbar(hb, ax=ax, label="Count", aspect=40)
 
     elif plot_type == PlotType.SCATTER:
-        ax.scatter(data.x, data.y, rasterized=len(data.x) > 1000)
+        ax.scatter(
+            data.x, data.y, rasterized=len(data.x) > 1000, marker="+", s=MARKER_SIZE
+        )
         ax.set_ylim(axis_limit.min_y, axis_limit.max_y)
         ax.set_xlim(axis_limit.min_x, axis_limit.max_x)
 
@@ -619,6 +636,8 @@ def plot(
                 ax.scatter(
                     data.x.loc[data.outlier_indices],
                     data.y.loc[data.outlier_indices],
+                    marker="+",
+                    s=MARKER_SIZE,
                     c="C2",
                     label=f"{len(data.outlier_indices):,} Outliers {data.outlier_label} "
                     f"({len(data.outlier_indices) / len(data.x):.0%})",
