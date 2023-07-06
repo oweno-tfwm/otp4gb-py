@@ -12,7 +12,7 @@ import pathlib
 import re
 import sys
 import textwrap
-from typing import Any, Callable, NamedTuple, Mapping, Optional
+from typing import Any, Callable, NamedTuple, Mapping, Optional, Union
 
 import caf.toolkit
 import numpy as np
@@ -22,9 +22,8 @@ import tqdm
 from matplotlib import figure
 from matplotlib import pyplot as plt
 from matplotlib.backends import backend_pdf
-from numpy import polynomial
 from pydantic import dataclasses, types
-from scipy import stats, optimize
+from scipy import optimize
 
 sys.path.extend((".", ".."))
 import otp4gb
@@ -56,12 +55,34 @@ class InclusiveRange:
         raise StopIteration()
 
 
+class InfillMethod(enum.StrEnum):
+    """Cost infilling methods."""
+
+    MEAN_RATIO = enum.auto()
+    LINEAR = enum.auto()
+    POLYNOMIAL_2 = enum.auto()
+    POLYNOMIAL_3 = enum.auto()
+    POLYNOMIAL_4 = enum.auto()
+    EXPONENTIAL = enum.auto()
+    LOGARITHMIC = enum.auto()
+
+
+class OutlierMethod(enum.StrEnum):
+    """Method for calculating outliers in `CurveFit`."""
+
+    STDDEV = enum.auto()
+    GEH = enum.auto()
+
+
 class InfillParameters(caf.toolkit.BaseConfig):
     """Config for `infill_costs` module."""
 
     folders: list[types.DirectoryPath]
     infill_columns: dict[str, float]
     zero_cost_zones: InclusiveRange
+    infill_methods: list[InfillMethod]
+    outlier_method: Optional[OutlierMethod] = None
+    outlier_cutoff: Optional[float] = None
 
 
 @dataclasses.dataclass
@@ -103,6 +124,7 @@ class PlotData:
     y: pd.Series
     title: str | None = None
     outlier_indices: pd.Index | None = None
+    outlier_label: str | None = None
 
     @pydantic.validator("y")
     def _check_index(cls, value: pd.Series, values) -> pd.Series:
@@ -155,57 +177,116 @@ class AxisLimit(NamedTuple):
         return AxisLimit(*values)
 
 
-class InfillMethod(enum.Enum):
-    """Cost infilling methods."""
-
-    MEAN_RATIO = enum.auto()
-    LINEAR = enum.auto()
-    POLYNOMIAL_2 = enum.auto()
-    POLYNOMIAL_3 = enum.auto()
-    POLYNOMIAL_4 = enum.auto()
-    EXPONENTIAL = enum.auto()
-    LOGARITHMIC = enum.auto()
+CurveFunction = Union[
+    Callable[[np.ndarray, float], np.ndarray],
+    Callable[[np.ndarray, float, float], np.ndarray],
+    Callable[[np.ndarray, float, float, float], np.ndarray],
+    Callable[[np.ndarray, float, float, float, float], np.ndarray],
+    Callable[[np.ndarray, float, float, float, float, float], np.ndarray],
+]
 
 
-# TODO Integrate this class with all infilling functions to determine outliers
 @dataclasses.dataclass(config=_Config)
 class CurveFit:
-    """Fits data to curves using `scipy.optimize.curve_fit` and calculates outliers."""
+    """Fits data to curves using `scipy.optimize.curve_fit` and calculates outliers.
 
+    After calculating outliers the first time the fitting
+    calculation will be redone without including the outliers.
+    """
+
+    function: CurveFunction
     popt: np.ndarray
+    residuals: np.ndarray
+    stddev: float
+    geh: np.ndarray
     outlier_mask: np.ndarray
-    outlier_quantile: Optional[float]
+    outlier_method: Optional[OutlierMethod] = None
+    outlier_cutoff: Optional[float] = None
 
     @classmethod
     def fit(
         cls,
-        func: Callable,
+        func: CurveFunction,
         x_data: np.ndarray,
         y_data: np.ndarray,
-        outlier_quantile: float | None = 0.9999,
+        outlier_method: OutlierMethod | None = None,
+        outlier_cutoff: float | None = 5,
         **kwargs,
-    ):
+    ) -> CurveFit:
+        """Fit given `func` to data using `scipy.optimize.curve_fit`.
+
+        If `outlier_method` is given then outliers are calculated,
+        after fitting, and the fitting is performed a second time
+        without them (no new outliers are calculated on the second
+        fit).
+
+        Parameters
+        ----------
+        func : CurveFunction
+            Function to fit data to.
+        x_data, y_data : np.ndarray
+            Data to fit to.
+        outlier_method: OutlierMethod, optional
+            Method used to calculate outliers, if None no
+            outliers are calculated.
+        outlier_cutoff : float | None, default 5
+            Cutoff value used to determine outliers, used differently
+            depending on `outlier_method`:
+            - STDDEV: Factor applied to standard deviation when calculating
+              outliers, an outlier is defined as the points with a residual
+              greater than `stddev_cutoff` multiple of standard deviations.
+            - GEH: Any values with a GEH greater than this value are
+              considered outliers.
+        kwargs :
+            Keyword arguments to pass to `optimize.curve_fit`.
+
+        Returns
+        -------
+        CurveFit
+            Optimum parameters and outliers from fitting.
+        """
         popt, pcov, info, msg, ier = optimize.curve_fit(
             func, x_data, y_data, full_output=True, **kwargs
         )
+        residuals = info["fvec"]
+        stddev = np.std(np.abs(residuals))
+        geh = np.array(calculate_geh(y_data, func(x_data, *popt)))
 
-        if outlier_quantile is not None:
-            # TODO Find better method for calculating outlier instead of quantile
-            residual_squared = info["fvec"] ** 2
-            outlier_value = np.quantile(residual_squared, outlier_quantile)
-            outlier_mask = residual_squared >= outlier_value
-
-            excluded_fit = cls.fit(
-                func, x_data[~outlier_mask], y_data[~outlier_mask], None, **kwargs
+        if outlier_method is None:
+            return CurveFit(
+                function=func,
+                popt=popt,
+                residuals=residuals,
+                stddev=stddev,
+                geh=geh,
+                outlier_mask=np.full(x_data.shape, False),
             )
-            popt = excluded_fit.popt
 
+        if outlier_method == OutlierMethod.STDDEV:
+            outlier_mask = np.abs(residuals) > (outlier_cutoff * stddev)
+        elif outlier_method == OutlierMethod.GEH:
+            outlier_mask = geh > outlier_cutoff
         else:
-            outlier_mask = np.full(x_data.shape, False)
+            raise ValueError(f"unknown outlier method: {outlier_method}")
+
+        excluded_fit = cls.fit(
+            func, x_data[~outlier_mask], y_data[~outlier_mask], None, **kwargs
+        )
 
         return CurveFit(
-            popt=popt, outlier_mask=outlier_mask, outlier_quantile=outlier_quantile
+            function=func,
+            popt=excluded_fit.popt,
+            residuals=excluded_fit.residuals,
+            stddev=excluded_fit.stddev,
+            geh=geh,
+            outlier_mask=outlier_mask,
+            outlier_method=outlier_method,
+            outlier_cutoff=outlier_cutoff,
         )
+
+    def __call__(self, array: np.ndarray) -> np.ndarray:
+        """Call curve function with optimum parameters."""
+        return self.function(array, *self.popt)
 
 
 class InfillFunction:
@@ -213,12 +294,21 @@ class InfillFunction:
 
     _MAX_LABEL_WIDTH = 20
     _FMT = ".2f"
+    _curve: Optional[CurveFit]
     _function: Callable[[np.ndarray], np.ndarray]
     _equation: str
     _name: str
     outlier_indices: pd.MultiIndex
+    outlier_label: str = ""
 
-    def __init__(self, method: InfillMethod, x: pd.Series, y: pd.Series) -> None:
+    def __init__(
+        self,
+        method: InfillMethod,
+        x: pd.Series,
+        y: pd.Series,
+        outlier_method: OutlierMethod | None = None,
+        outlier_cutoff: float | None = None,
+    ) -> None:
         """Fits infilling function to given data.
 
         Parameters
@@ -227,11 +317,18 @@ class InfillFunction:
             Method of infilling to use.
         x, y : pd.Series
             X and y values to fit infilling function to.
+        outlier_method: OutlierMethod, optional
+            Method for calculating outliers when fitting data.
+        outlier_cutoff: float, optional
+            Cutoff value to use for outliers, depends
+            on `outlier_method`.
         """
         setup_function = self._get_function(method)
         self.outlier_indices = pd.MultiIndex.from_tuples(
             [], names=["origin", "destination"]
         )
+        self._outlier_method = outlier_method
+        self._outlier_cutoff = outlier_cutoff
 
         try:
             setup_function(x, y)
@@ -282,24 +379,39 @@ class InfillFunction:
 
         return lookup[method]
 
+    def _fit(self, func: CurveFunction, x: pd.Series, y: pd.Series) -> CurveFit:
+        self._curve = CurveFit.fit(
+            func, x, y, self._outlier_method, self._outlier_cutoff
+        )
+        assert isinstance(self._curve, CurveFit)
+
+        self._function = lambda x: func(x, *list(self._curve.popt))
+
+        if self._curve is not None and self._curve.outlier_method is not None:
+            self.outlier_indices = x.index[self._curve.outlier_mask]
+            self.outlier_label = (
+                f"{self._curve.outlier_method.name} - {self._curve.outlier_cutoff}"
+            )
+
+        return self._curve
+
     def _ratio(self, x: pd.Series, y: pd.Series) -> None:
         ratio = np.mean(y / x)
 
         self._function = lambda arr: arr * ratio
         self._name = "Mean Ratio"
         self._equation = f"y = {ratio:.2f}x"
+        self._curve = None
 
     def _linear(self, x: pd.Series, y: pd.Series) -> None:
         def line(arr, gradient, intercept):
             return (arr * gradient) + intercept
 
-        fit = CurveFit.fit(line, x, y)
-        gradient, intercept = fit.popt
+        self._curve = self._fit(line, x, y)
+        gradient, intercept = self._curve.popt
 
-        self._function = lambda arr: line(arr, gradient, intercept)
         self._name = "Linear Regression"
         self._equation = f"y = {gradient:.2f}x {intercept:+.2f}"
-        self.outlier_indices = x.index[fit.outlier_mask]
 
     def _polynomial(self, x: pd.Series, y: pd.Series, degree: int) -> None:
         def poly5(x, a, b, c, d, e, f):
@@ -322,12 +434,11 @@ class InfillFunction:
                 f"only defined for {', '.join(str(i) for i in degree_lookup)}"
             )
 
-        fit = CurveFit.fit(degree_lookup[degree], x, y)
-
+        self._curve = self._fit(degree_lookup[degree], x, y)
         self._name = f"Polynomial degree {degree}"
 
         self._equation = "y ="
-        for i, value in enumerate(fit.popt):
+        for i, value in enumerate(self._curve.popt):
             power = degree - i
 
             if i == 0:
@@ -340,35 +451,33 @@ class InfillFunction:
             elif power == 1:
                 self._equation += "x"
 
-        self._function = lambda arr: degree_lookup[degree](arr, *list(fit.popt))
-        self.outlier_indices = x.index[fit.outlier_mask]
-
     def _exponential(self, x: pd.Series, y: pd.Series) -> None:
         def exp(arr, a, b, c):
             return a * np.exp(b * arr) + c
 
-        fit = CurveFit.fit(exp, x, y)
-        a, b, c = fit.popt
+        self._curve = self._fit(exp, x, y)
+        a, b, c = self._curve.popt
 
-        self._function = functools.partial(exp, a=a, b=b, c=c)
         self._name = "Exponential"
         self._equation = rf"y = {a:.2f} e^{{{b:.2f}x}} {c:+.2f}"
-        self.outlier_indices = x.index[fit.outlier_mask]
 
     def _logarithmic(self, x: pd.Series, y: pd.Series) -> None:
         def log(arr, a, b, c):
             return a * np.log(b * arr) + c
 
-        fit = CurveFit.fit(log, x, y)
-        a, b, c = fit.popt
+        self._curve = self._fit(log, x, y)
+        a, b, c = self._curve.popt
 
-        self._function = functools.partial(log, a=a, b=b, c=c)
         self._name = "Natural Log"
         self._equation = rf"y = {a:.2f} \ln ({b:.2f}x) {c:+.2f}"
-        self.outlier_indices = x.index[fit.outlier_mask]
 
 
 ##### FUNCTIONS #####
+def calculate_geh(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Calculate the GEH statistic between `x` and `y`."""
+    return np.sqrt((2 * (y - x) ** 2) / (x + y))
+
+
 def calculate_crow_fly(
     origins_path: pathlib.Path,
     destinations_path: pathlib.Path | None,
@@ -511,7 +620,7 @@ def plot(
                     data.x.loc[data.outlier_indices],
                     data.y.loc[data.outlier_indices],
                     c="C2",
-                    label=f"{len(data.outlier_indices):,} Outliers "
+                    label=f"{len(data.outlier_indices):,} Outliers {data.outlier_label} "
                     f"({len(data.outlier_indices) / len(data.x):.0%})",
                 )
 
@@ -552,6 +661,8 @@ def infill_metric(
     plot_file: pathlib.Path,
     method: InfillMethod,
     zero_zones: np.ndarray | None = None,
+    outlier_method: OutlierMethod | None = None,
+    outlier_cutoff: float | None = None,
 ) -> pd.Series:
     """Infill given `metric` using `method` given and plot graphs.
 
@@ -570,6 +681,11 @@ def infill_metric(
     zero_zones: np.ndarray, optional
         List of zones to be excluded from infilling and
         set to 0 after infilling.
+    outlier_method: OutlierMethod, optional
+        Method for calculating outliers when fitting data.
+    outlier_cutoff: float, optional
+        Cutoff value to use for outliers, depends
+        on `outlier_method`.
 
     Returns
     -------
@@ -599,7 +715,13 @@ def infill_metric(
     LOG.info(message)
 
     infill_indices = distances.index[~distances.index.isin(data.index)]
-    infill_function = InfillFunction(method, data[distances.name], data[metric.name])
+    infill_function = InfillFunction(
+        method,
+        data[distances.name],
+        data[metric.name],
+        outlier_method=outlier_method,
+        outlier_cutoff=outlier_cutoff,
+    )
 
     infill_indices = pd.MultiIndex.from_tuples(
         infill_indices.to_flat_index().tolist()
@@ -626,6 +748,7 @@ def infill_metric(
             y=data[metric.name],
             title=f"Before Infilling\n{metric.name} vs {distances.name}",
             outlier_indices=infill_function.outlier_indices,
+            outlier_label=infill_function.outlier_label,
         )
     ]
 
@@ -691,6 +814,8 @@ def infill_costs(
     output_folder: pathlib.Path,
     methods: list[InfillMethod] | None = None,
     zero_zones: list[int] | None = None,
+    outlier_method: OutlierMethod | None = None,
+    outlier_cutoff: float | None = None,
 ) -> None:
     """Infill cost metrics using given `methods` and output graphs.
 
@@ -712,6 +837,11 @@ def infill_costs(
     zero_zones: list[int], optional
         List of zones to be excluded from infilling and
         set to 0 after infilling.
+    outlier_method: OutlierMethod, optional
+        Method for calculating outliers when fitting data.
+    outlier_cutoff: float, optional
+        Cutoff value to use for outliers, depends
+        on `outlier_method`.
 
     Raises
     ------
@@ -738,7 +868,12 @@ def infill_costs(
         )
 
         method_folder = output_folder / f"infill - {method.name.lower()}"
-        method_folder.mkdir(exist_ok=True)
+        if outlier_method is not None:
+            method_folder = method_folder.with_name(
+                method_folder.stem + f" ({outlier_method.name})"
+            )
+
+        method_folder.mkdir(exist_ok=True, parents=True)
         infilled_metrics = []
 
         for column, factor in columns.items():
@@ -758,6 +893,8 @@ def infill_costs(
                     method_folder / (metrics_path.stem + f"-{column}.pdf"),
                     method,
                     zero_zones=zero_zones,
+                    outlier_method=outlier_method,
+                    outlier_cutoff=outlier_cutoff,
                 )
             )
 
@@ -792,8 +929,7 @@ def produce_matrices(infilled: pd.DataFrame, output_path: pathlib.Path) -> None:
 def main(
     folder: pathlib.Path,
     params: config.ProcessConfig,
-    infill_columns: dict[str, float],
-    zero_zones: list[int] | None = None,
+    infill_params: InfillParameters,
 ) -> None:
     """Infill costs in given OTP `folder`.
 
@@ -803,19 +939,18 @@ def main(
         Folder containing OTP4GB config and outputs.
     params : config.ProcessConfig
         OTP4GB config from `folder`.
-    infill_columns : dict[str, float]
-        Names of columns to infill and factors to apply to values
-        before infilling.
-    zero_zones: list[int], optional
-        List of zones to be excluded from infilling and
-        set to 0 after infilling.
+    infill_params : InfillParameters
+        Other parameters for controlling the infilling.
 
     Raises
     ------
     FileNotFoundError
         If the cost metrics file can't be found.
     """
-    logging.initialise_logger(otp4gb.__package__, folder / "logs/infill_costs.log")
+    logging.initialise_logger(
+        otp4gb.__package__,
+        folder / f"logs/infill_costs-{datetime.date.today():%Y%m%d}.log",
+    )
     LOG.info("Infilling %s", folder)
 
     origin_path = config.ASSET_DIR / params.centroids
@@ -826,6 +961,8 @@ def main(
     distances = calculate_crow_fly(origin_path, destination_path, None)
     distances = distances / 1000
     distances.name = "Crow-Fly Distance (km)"
+
+    infill_folder_name = f"infilled - {datetime.date.today():%Y%m%d}"
 
     for time_period in params.time_periods:
         travel_datetime = datetime.datetime.combine(
@@ -864,10 +1001,13 @@ def main(
 
             infill_costs(
                 recalculated_metrics_path,
-                infill_columns,
+                infill_params.infill_columns,
                 distances,
-                metrics_path.parent,
-                zero_zones=zero_zones,
+                metrics_path.parent / infill_folder_name,
+                methods=infill_params.infill_methods,
+                zero_zones=list(infill_params.zero_cost_zones),
+                outlier_method=infill_params.outlier_method,
+                outlier_cutoff=infill_params.outlier_cutoff,
             )
 
 
@@ -875,15 +1015,9 @@ def _run() -> None:
     args = InfillArgs.parse()
 
     params = InfillParameters.load_yaml(args.config)
-    zero_zones = list(params.zero_cost_zones)
 
     for folder in params.folders:
-        main(
-            folder,
-            config.load_config(folder),
-            params.infill_columns,
-            zero_zones=zero_zones,
-        )
+        main(folder, config.load_config(folder), params)
 
 
 if __name__ == "__main__":

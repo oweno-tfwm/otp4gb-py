@@ -10,3 +10,13 @@ infill_columns:
 zero_cost_zones:
   start: 1095
   end: 1156
+
+infill_methods:
+  - mean_ratio
+  - linear
+  - polynomial_2
+  - exponential
+  - logarithmic
+
+outlier_method: stddev
+outlier_cutoff: 5
