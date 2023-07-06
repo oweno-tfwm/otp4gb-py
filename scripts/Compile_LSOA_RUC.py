@@ -26,17 +26,21 @@ In general though:
 
 """
 
-#### IMPORTS ####
+# IMPORTS
 # System imports
-import os 
+import os
+import pathlib
 
 # 3rd party imports
-import pandas as pd 
+import pandas as pd
 
-#### CONSTANTS ####
+# CONSTANTS ####
 # Specify data directory & filename for Rural Urban Classifications (RUC) file
-DATA_DIR = r"E:\otp4gb-py\Data"
+ASSET_DIR = pathlib.Path(os.getcwd()).parents[0] / "assets"
+
 DATA_FILENAME = "Rural_Urban_Classification_2011_lookup_tables_for_small_area_geographies.xlsx"
+# Export outputs
+TO_SAVE = False
 # Excel doc sheet name
 SHEET_NAME = "LSOA11"
 
@@ -45,15 +49,15 @@ SAVE_FILENAME = "compiled_LSOA_area_types.csv"
 
 #### SCRIPT ####
 # Load LSOA data: 
-lsoa_area_types = pd.read_excel(os.path.join(DATA_DIR, DATA_FILENAME),
+lsoa_area_types = pd.read_excel(os.path.join(ASSET_DIR, DATA_FILENAME),
                                 sheet_name=SHEET_NAME,
                                 skiprows=[0, 1])
 
 # Rename columns for lookup format
 lsoa_area_types.rename(columns={"Lower Super Output Area 2011 Code": "LSOA11CD",
-                                  "Rural Urban Classification 2011 code": "RUC11CD",
-                                  "Rural Urban Classification 2011 (10 fold)": "RUC11NM",
-                                  "Rural Urban Classification 2011 (2 fold)": "ruc"},
+                                "Rural Urban Classification 2011 code": "RUC11CD",
+                                "Rural Urban Classification 2011 (10 fold)": "RUC11NM",
+                                "Rural Urban Classification 2011 (2 fold)": "ruc"},
                        inplace=True)
 
 unique_ruc_codes = lsoa_area_types["RUC11CD"].unique()
@@ -73,6 +77,6 @@ print(unique_ruc_names)
 lsoa_area_types = lsoa_area_types[["LSOA11CD", "RUC11CD", "RUC11NM", "ruc"]]
 
 # Export the data.
-lsoa_area_types.to_csv(os.path.join(DATA_DIR, SAVE_FILENAME),
-                       index=False)
-
+if TO_SAVE:
+    lsoa_area_types.to_csv(os.path.join(ASSET_DIR, SAVE_FILENAME),
+                           index=False)
