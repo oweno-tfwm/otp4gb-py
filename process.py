@@ -90,8 +90,7 @@ def main():
     logger.info("Loading centroids")
 
     # Check if config.destination_centroids has been supplied
-    dest_path_len = len(config.destination_centroids)
-    if config.destination_centroids is None or dest_path_len == 0:
+    if config.destination_centroids is None:
         destination_centroids_path = None
         logger.info("No destination centroids detected. Proceeding with %s",
                     config.centroids,
