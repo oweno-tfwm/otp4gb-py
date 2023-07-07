@@ -232,7 +232,7 @@ def _load_ruc_lookup(data: RUCLookup, zones: np.ndarray) -> pd.Series:
 
 def _load_previous_trips(data: PreviousTrips) -> set:
     """Load previously requested trips into a python set"""
-    # TODO(MB): remove the check_column from this if continuing to use a set of od_pairs
+    # TODO: remove the check_column from this if continuing to use a set of od_pairs
     previous_trips = pd.read_csv(data.path, usecols=[data.od_column, data.check_column])
 
     # Convert lookup to a set - think it will be faster to compare items to a set rather than a lookup
@@ -249,13 +249,18 @@ def _load_irrelevant_destinations(
     irrelevant_data = pd.read_csv(ASSET_DIR / data.path, usecols=[data.zone_column])
 
     irrelevant = irrelevant_data[data.zone_column].unique()
+
+    if len(irrelevant) == 0:
+        raise ValueError("%s file is empty. Please provide a file with data" %
+                         data.path)
+
     matched_irrelevant = np.isin(irrelevant, zones)
 
     LOG.info("Given %s unique destinations to exclude",
              len(matched_irrelevant)
              )
 
-    if len(irrelevant) == 0:
+    if len(matched_irrelevant) == 0:
         return None
 
     return matched_irrelevant
