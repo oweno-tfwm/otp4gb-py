@@ -354,5 +354,5 @@ def cost_matrix_from_responses(
                 # TODO(MB) Recalculate generalised cost if new parameters are provided
                 matrix_data.append(_matrix_costs(results))
 
-        _write_matrix_files(matrix_data, matrix_file, aggregation_method)
+    _write_matrix_files(matrix_data, matrix_file, aggregation_method)
 
