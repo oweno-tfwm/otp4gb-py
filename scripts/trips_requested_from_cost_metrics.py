@@ -7,11 +7,14 @@ Created on Tue Mar 28 10:37:33 2023
 Script to create a lookup of already requested trips by OTP.
 
 Sometimes, VMs shut down overnight, or large OTP runs will be split over 
-    numerous VM machines, leaving us with multiple files we don't want to 
-    re-request. This script creates a lookup of previously requested trips
-    from multiple cost-metric output files.
+    numerous VM machines, leaving us with multiple response files we don't
+    want to re-request. These can be compiled into a single matrix with
+    cost_metrics_from_responses.py
 
-When OTP filters through provided data to determine requests to send to
+    This script creates a lookup of previously requested trips
+    from (up to) multiple cost-metrics matrices
+
+When OTP filters through potential trips to determine requests to send to
     the server, if OTP identifies a that a trip from the lookup that has 
     already been requested, it skips this trip.
     
@@ -31,15 +34,17 @@ Output:
       metrics) will also be saved
     
 """
-#### Imports ####
+
+# IMPORTS
 import pandas as pd
+from pathlib import Path
 import numpy as np
 import os
 
-#### Constants ####
+# CONSTANTS
 # Path to OTP cost metric files (supports multiple OTP outputs)
-RESPONSE_PATHS = [
-    r"E:\OTP_Processing\OTP outputs\First OTP run (signalis)\BUS_WALK_costs_20230608T0900_COST_METRICS-metrics.csv"
+COST_METRICS_PATHS = [
+    Path(r"E:\OTP_Processing\OTP outputs\First OTP run (signalis)\BUS_WALK_costs_20230608T0900_COST_METRICS-metrics.csv")
     ] 
 
 # Output path & filename to export trips previously requested lookup
@@ -49,27 +54,28 @@ OUT_FILENAME = "trips_previously_requested.csv"
 # Should the compiled cost matrix be saved ?
 SAVE_COMPILED_COSTS = False
 COMPILED_COSTS_FILENAME = "compiled_COST_METRICS-metrics.csv"
-# ^ If save is True - a compiled cost matrix will be saved in the same directory 
-#       as the compiled lookup of requested trips with this filename
+# ^ If save is True - a compiled cost matrix (from all in COST_METRICS_PATHS)
+#       will be saved in the OUT_PATH directory with this filename.
 
-#### Script #### 
+# SCRIPT
 # Load response(s) into single matrix
-for i in range(len(RESPONSE_PATHS)): 
+for i in range(len(COST_METRICS_PATHS)):
     
     if i == 0:
         # Create compiled matrix
-        path = RESPONSE_PATHS[i]
+        path = COST_METRICS_PATHS[i]
         print("Reading {}".format(path))
         compiled_matrix = pd.read_csv(path)
     else:
         # Append new matrices to compiled matrix
-        path = RESPONSE_PATHS[i]
+        path = COST_METRICS_PATHS[i]
         print("Reading {}".format(path))
         matrix = pd.read_csv(path)
         compiled_matrix = pd.concat([matrix, compiled_matrix], ignore_index=True)
         compiled_matrix.reset_index(inplace=True, drop=True)
 
-# Add OD_code
+# Add OD_code (we will remove duplicate trips maybe present in multiple
+#              cost metrics matrices)
 compiled_matrix["od_code"] = (
     compiled_matrix["origin_id"] + "_" + compiled_matrix["destination_id"]
     )
@@ -107,8 +113,8 @@ initial_len = len(compiled_matrix)
 
 # Remove duplicate trips within the compiled_matrix
 compiled_matrix = compiled_matrix.drop_duplicates("od_code",
-                                                   keep="first"
-                                                   )
+                                                  keep="first",
+                                                  )
 
 # If any of the 1e99 JTs remain, convert these back to nan so they won't
 #   throw off further analysis/cost calculations.

@@ -80,3 +80,5 @@ lsoa_area_types = lsoa_area_types[["LSOA11CD", "RUC11CD", "RUC11NM", "ruc"]]
 if TO_SAVE:
     lsoa_area_types.to_csv(os.path.join(ASSET_DIR, SAVE_FILENAME),
                            index=False)
+else:
+    print("Skipped saving output")
