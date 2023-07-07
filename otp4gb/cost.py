@@ -324,16 +324,16 @@ def iterate_responses(response_file: io.TextIOWrapper) -> Iterator[CostResults]:
 
 
 def cost_matrix_from_responses(
-    responses_files: list[pathlib.Path],
+    *responses_files: pathlib.Path,
     matrix_file: pathlib.Path,
     aggregation_method: AggregationMethod,
 ) -> None:
-    """Create cost matrix CSV from responses JSON lines file.
+    """Create cost matrix CSV from responses (upto multiple) JSON lines files.
 
     Parameters
     ----------
-    responses_files : list[pathlib.Path]
-        List of Path(s) to JSON lines file containing `CostResults`.
+    positional args (responses_files) : Pathlib.Path
+       pathlib.Path(s) to JSON lines file(s) containing `CostResults`.
     matrix_file : pathlib.Path
         Path to CSV file to output cost metrics to.
     aggregation_method : AggregationMethod
