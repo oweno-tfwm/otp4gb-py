@@ -1,119 +1,190 @@
+"""Run OTP4GB-py and produce cost matrices."""
+from __future__ import annotations
 
+import argparse
 import atexit
+import datetime
 import logging
-import multiprocessing
-import operator
-import os
-import pandas as pd
-import sys
-from otp4gb.batch import build_run_spec, run_batch, setup_worker
-from otp4gb.centroids import load_centroids
+import pathlib
+
+from pydantic import dataclasses
+import pydantic
+
+from otp4gb.centroids import load_centroids, ZoneCentroidColumns
 from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.logging import file_handler_factory, get_logger
 from otp4gb.otp import Server
-from otp4gb.util import Timer, chunker
+from otp4gb.util import Timer
+from otp4gb import cost, parameters
 
 
 logger = get_logger()
 logger.setLevel(logging.INFO)
 
-FILENAME_PATTERN = "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_{location_name}_ToArriveBy_{arrival_time:%Y%m%d_%H%M}_within_{journey_time:_>4n}_mins.geojson"
+FILENAME_PATTERN = (
+    "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_"
+    "{location_name}_ToArriveBy_{arrival_time:%Y%m%d_%H%M}_"
+    "within_{journey_time:_>4n}_mins.geojson"
+)
+
+
+@dataclasses.dataclass
+class ProcessArgs:
+    """Arguments for process script.
+
+    Attributes
+    ----------
+    folder : pathlib.Path
+        Path to inputs directory.
+    save_parameters : bool, default False
+        If true saves build parameters and
+        exit.
+    """
+
+    folder: pydantic.DirectoryPath
+    save_parameters: bool = False
+
+    @classmethod
+    def parse(cls) -> ProcessArgs:
+        """Parse command line arguments."""
+        parser = argparse.ArgumentParser(
+            description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+        parser.add_argument(
+            "folder", type=pathlib.Path, help="folder containing config file and inputs"
+        )
+        parser.add_argument(
+            "-p",
+            "--save_parameters",
+            action="store_true",
+            help="save build parameters to JSON lines files and exit",
+        )
+
+        parsed_args = parser.parse_args()
+        return ProcessArgs(**vars(parsed_args))
 
 
 def main():
+    arguments = ProcessArgs.parse()
+
     _process_timer = Timer()
-    matrix = []
 
     @atexit.register
     def report_time():
-        logger.info('Calculated %s rows of matrix in %s',
-                    len(matrix), _process_timer)
+        logger.info("Finished in %s", _process_timer)
 
-    try:
-        opt_base_folder = os.path.abspath(sys.argv[1])
-    except IndexError:
-        logger.error('No path provided')
     log_file = file_handler_factory(
-        'process.log', os.path.join(opt_base_folder, 'logs'))
+        f"process-{datetime.date.today():%Y%m%d}.log", arguments.folder / "logs"
+    )
     logger.addHandler(log_file)
 
-    config = load_config(opt_base_folder)
+    config = load_config(arguments.folder)
 
-    opt_travel_time = config.get('travel_time')
-    opt_buffer_size = config.get('buffer_size', 100)
-    opt_modes = config.get('modes')
-    opt_centroids_path = os.path.join(ASSET_DIR, config.get('centroids'))
-    opt_clip_box = operator.itemgetter(
-        'min_lon', 'min_lat', 'max_lon', 'max_lat')(config.get('extents'))
-
-    opt_isochrone_step = 15
-    opt_max_travel_time = 90
-    opt_max_walk_distance = 2500
-    opt_no_server = False
-    opt_num_workers = 8
-    opt_chunk_size = opt_num_workers * 10
-    opt_name_key = 'msoa11nm'
-
-    # Start OTP Server
-    server = Server(opt_base_folder)
-    if not opt_no_server:
-        logger.info('Starting server')
+    server = Server(arguments.folder)
+    if arguments.save_parameters:
+        logger.info("Saving OTP request parameters without starting OTP")
+    elif not config.no_server:
+        logger.info("Starting server")
         server.start()
 
-    # Load Northern MSOAs
-    logger.info('Loading centroids')
-    centroids = load_centroids(opt_centroids_path)
+    logger.info("Loading centroids")
 
-    # Filter MSOAs by bounding box
-    centroids = centroids.clip(opt_clip_box)
-    logger.info('Considering %d centroids', len(centroids))
+    # Check if config.destination_centroids has been supplied
+    if config.destination_centroids is None:
+        destination_centroids_path = None
+        logger.info("No destination centroids detected. Proceeding with %s",
+                    config.centroids,
+                    )
+    else:
+        destination_centroids_path = pathlib.Path(ASSET_DIR) / config.destination_centroids
 
-    # Create output directory
-    isochrones_dir = os.path.join(opt_base_folder, 'isochrones')
-    if not os.path.exists(isochrones_dir):
-        os.makedirs(isochrones_dir)
-
-    jobs = build_run_spec(name_key=opt_name_key, modes=opt_modes, centroids=centroids, arrive_by=opt_travel_time,
-                          travel_time_max=opt_max_travel_time, travel_time_step=opt_isochrone_step,
-                          max_walk_distance=opt_max_walk_distance, server=server)
-
-    matrix_filename = os.path.join(
-        opt_base_folder,
-        f"MSOAtoMSOATravelTimeMatrix_ToArriveBy_{opt_travel_time.strftime('%Y%m%d_%H%M')}.csv"
+    centroids = load_centroids(
+        pathlib.Path(ASSET_DIR) / config.centroids,
+        destination_centroids_path,
+        # TODO(MB) Read parameters for config to define column names
+        zone_columns=ZoneCentroidColumns(),
+        extents=config.extents,
     )
-    logger.info('Launching batch processor to process %d jobs', len(jobs))
 
-    workers = multiprocessing.Pool(
-        processes=opt_num_workers, initializer=setup_worker, initargs=({
-            'output_dir': isochrones_dir,
-            'centroids': centroids,
-            'buffer_size': opt_buffer_size,
-            'FILENAME_PATTERN': FILENAME_PATTERN,
-            'name_key': opt_name_key,
-        },))
+    logger.info("Considering %d centroids", len(centroids.origins))
 
-    with workers:
-        for idx, batch in enumerate(chunker(jobs, opt_chunk_size)):
+    for time_period in config.time_periods:
+        search_window_seconds = None
+        if time_period.search_window_minutes is not None:
+            search_window_seconds = time_period.search_window_minutes * 60
+
+        travel_datetime = datetime.datetime.combine(
+            config.date, time_period.travel_time
+        )
+        # Assume time is in local timezone
+        travel_datetime = travel_datetime.astimezone()
+        logger.info(
+            "Given date / time is assumed to be in local timezone: %s",
+            travel_datetime.tzinfo,
+        )
+
+        for modes in config.modes:
+            print()  # Empty line space in cmd window
+            cost_settings = parameters.CostSettings(
+                server_url="http://localhost:8080",
+                modes=modes,
+                datetime=travel_datetime,
+                arrive_by=True,
+                search_window_seconds=search_window_seconds,
+                max_walk_distance=config.max_walk_distance,
+                crowfly_max_distance=config.crowfly_max_distance,
+            )
+
+            if arguments.save_parameters:
+                logger.info(
+                    "Building parameters for %s - %s",
+                    time_period.name,
+                    ", ".join(modes),
+                )
+
+                parameters_path = arguments.folder / (
+                    f"parameters/{time_period.name}_{'_'.join(modes)}"
+                    f"_parameters_{travel_datetime:%Y%m%dT%H%M}.csv"
+                )
+                parameters_path.parent.mkdir(exist_ok=True)
+
+                parameters.save_calculation_parameters(
+                    zones=centroids,
+                    settings=cost_settings,
+                    output_file=parameters_path,
+                    ruc_lookup=config.ruc_lookup,
+                    irrelevant_destinations=config.irrelevant_destinations,
+                )
+                continue
+
             logger.info(
-                "==================== Running batch %d ====================", idx+1)
-            logger.info("Dispatching %d jobs", len(batch))
-            results = workers.imap_unordered(run_batch, batch)
+                "Calculating costs for %s - %s", time_period.name, ", ".join(modes)
+            )
+            matrix_path = arguments.folder / (
+                f"costs/{time_period.name}/"
+                f"{'_'.join(modes)}_costs_{travel_datetime:%Y%m%dT%H%M}.csv"
+            )
+            matrix_path.parent.mkdir(exist_ok=True, parents=True)
 
-            # This is a list comprehension which flattens the results
-            results = [row for result in results for row in result]
-            logger.info("Receiving %d results", len(results))
+            #TODO: Add requested trips here
+            jobs = parameters.build_calculation_parameters(
+                zones=centroids,
+                settings=cost_settings,
+                ruc_lookup=config.ruc_lookup,
+                irrelevant_destinations=config.irrelevant_destinations,
+            )
 
-            # Append to matrix
-            matrix = matrix + results
-
-            # Write list to csv
-            # TODO Check if this is expensive
-            logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
-            pd.DataFrame.from_dict(matrix).to_csv(matrix_filename, index=False)
+            cost.build_cost_matrix(
+                jobs=jobs,
+                matrix_file=matrix_path,
+                generalised_cost_parameters=config.generalised_cost_factors,
+                aggregation_method=config.iterinary_aggregation_method,
+                workers=config.number_of_threads,
+            )
 
     # Stop OTP Server
     server.stop()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

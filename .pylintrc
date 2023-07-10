@@ -1,0 +1,11 @@
+[MISCELLANEOUS]
+
+# List of note tags to take in consideration, separated by a comma.
+notes=FIXME,XXX,TODO,BACKLOG
+
+# Regular expression of note tags to take in consideration.
+notes-rgx=TODO\(.+\)
+
+# CSV Output format
+# Path,Module,Line Number,Python Object,Message ID,Message Type,Message
+# {path},{module},{line},{obj},{msg_id},{symbol},\"{msg}\"

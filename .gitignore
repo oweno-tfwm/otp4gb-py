@@ -141,6 +141,9 @@ venv.bak/
 .spyderproject
 .spyproject
 
+# Pycharm project settings
+.idea
+
 # Rope project settings
 .ropeproject
 
@@ -169,3 +172,6 @@ cython_debug/
 #.idea/
 
 .vscode/
+
+# Draw.io backup / temporary files
+.$*
