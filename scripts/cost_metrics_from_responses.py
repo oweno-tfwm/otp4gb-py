@@ -34,20 +34,26 @@ from otp4gb.cost import cost_matrix_from_responses, AggregationMethod
 # CONSTANTS
 # response paths should be a pathlib.Path object
 RESPONSES_PATHS = [
-    Path(r"E:\OTP_Processing\OTP outputs\TRSE OTP Related runs\First OTP run (signalis)\BUS_WALK_costs_20230608T0900.csv-response_data.jsonl"),
-    Path(r"E:\OTP_Processing\OTP outputs\TNE_bus_test\costs\AM\BUS_WALK_costs_20230608T0900.csv-response_data.jsonl"),
+    Path(
+        r"E:\OTP_Processing\OTP outputs\TRSE OTP Related runs\First OTP run (signalis)\BUS_WALK_costs_20230608T0900.csv-response_data.jsonl"
+    ),
+    Path(
+        r"E:\OTP_Processing\OTP outputs\TNE_bus_test\costs\AM\BUS_WALK_costs_20230608T0900.csv-response_data.jsonl"
+    ),
 ]
 # Output path for the compiled responses matrix
 MATRIX_PATH = Path(r"C:\Users\Signalis\Desktop\temp_outputs\test_output_matrix.csv")
 
 # SCRIPT
-print("Script commenced: {}\nCompiling responses {}".format(
-    datetime.now().strftime("%H:%M:%S"),
-    RESPONSES_PATHS,
-))
+print(
+    "Script commenced: {}\nCompiling responses {}".format(
+        datetime.now().strftime("%H:%M:%S"),
+        RESPONSES_PATHS,
+    )
+)
 
-cost_matrix_from_responses(responses_files=RESPONSES_PATHS,
-                           matrix_file=MATRIX_PATH,
-                           aggregation_method=AggregationMethod)
+cost_matrix_from_responses(
+    *RESPONSES_PATHS, matrix_file=MATRIX_PATH, aggregation_method=AggregationMethod
+)
 
 print("Script finished: {}".format(datetime.now().strftime("%H:%M:%S")))

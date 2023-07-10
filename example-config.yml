@@ -79,4 +79,3 @@ irrelevant_destinations:
 previous_trips:
   path: previously_requested_trips.csv
   od_column: od_code
-  
