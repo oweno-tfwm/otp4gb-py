@@ -112,6 +112,7 @@ class PlotType(enum.Enum):
 
     HEXBIN = enum.auto()
     SCATTER = enum.auto()
+    HISTOGRAM = enum.auto()
 
 
 class _Config:
@@ -576,6 +577,41 @@ def filter_responses(responses_path: pathlib.Path, max_count: int = 10) -> pathl
     return output_path
 
 
+def histogram(ax: plt.Axes, data: pd.Series) -> None:
+    """Plot histogram of `data` with percentage labels."""
+    finite = data.values[np.isfinite(data.values)]
+    if len(finite) != len(data):
+        ax.text(
+            f"{len(finite)} ({len(finite) / len(data):.1%})"
+            "non-finite\nvalues excluded from plot",
+            (0.8, 0.8),
+            xycoords="axes fraction",
+            bbox=dict(boxstyle="round", facecolor="white"),
+        )
+
+    counts, _, rectangles = ax.hist(finite, bins=20)
+
+    total = np.sum(counts)
+    for count, rect in zip(counts, rectangles):
+        percentage = count / total
+        if percentage > 0.01:  # Greater than 1%
+            label = f"{percentage:.0%}"
+        else:
+            label = f"{percentage:.1%}"
+
+        ax.text(
+            rect.get_x() + rect.get_width() / 2,
+            rect.get_height() + 5,
+            label,
+            ha="center",
+            va="bottom",
+            fontsize="small",
+        )
+
+    ax.set_ylabel("Count")
+    ax.set_xlabel(data.name)
+
+
 def plot_axes(
     ax: plt.Axes,
     data: PlotData,
@@ -594,6 +630,12 @@ def plot_axes(
         ax.set_ylim(axis_limit.min_y, axis_limit.max_y)
         ax.set_xlim(axis_limit.min_x, axis_limit.max_x)
 
+    elif plot_type == PlotType.HISTOGRAM:
+        histogram(ax, data.y)
+
+    else:
+        raise ValueError(f"unknown plot type: {plot_type.name}")
+
     ax.annotate(
         f"Total Count\n{len(data.x):,}",
         (0.8, 0.05),
@@ -601,8 +643,9 @@ def plot_axes(
         bbox=dict(boxstyle="round", facecolor="white"),
     )
 
-    ax.set_xlabel(data.x.name)
-    ax.set_ylabel(data.y.name)
+    if plot_type in (PlotType.HEXBIN, PlotType.SCATTER):
+        ax.set_xlabel(data.x.name)
+        ax.set_ylabel(data.y.name)
 
     if data.title is not None:
         ax.set_title(data.title)
@@ -627,6 +670,9 @@ def plot(
     for ax, data in zip(axes, plot_data):
         limit = axis_limit.infill(data)
         plot_axes(ax, data, plot_type, limit)
+
+        if plot_type == PlotType.HISTOGRAM:
+            continue
 
         if fit_function is not None:
             x = np.arange(limit.min_x, limit.max_x, 1)
