@@ -1004,6 +1004,14 @@ def main(
             if not metrics_path.is_file():
                 raise FileNotFoundError(metrics_path)
 
+            infill_folder = metrics_path.parent / infill_folder_name
+            infill_folder.mkdir(exist_ok=True)
+            LOG.info("Created output folder: %s", infill_folder)
+
+            crow_fly_path = infill_folder / "crow-fly_distances.csv"
+            distances.unstack("destination").to_csv(crow_fly_path)
+            LOG.info("Written: %s", crow_fly_path.name)
+
             recalculated_path = matrix_path.with_name(
                 matrix_path.stem + "-recalculated.csv"
             )
@@ -1022,7 +1030,7 @@ def main(
                 recalculated_metrics_path,
                 infill_params.infill_columns,
                 distances,
-                metrics_path.parent / infill_folder_name,
+                infill_folder,
                 methods=infill_params.infill_methods,
                 zero_zones=list(infill_params.zero_cost_zones),
                 outlier_method=infill_params.outlier_method,
