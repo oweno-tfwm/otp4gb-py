@@ -21,6 +21,7 @@ from otp4gb import centroids, routing, util
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
 CROWFLY_DISTANCE_CRS = "EPSG:27700"
+FLAG_DISTANCE_INTERNAL = 10_000
 RUC_WEIGHTS = {
     "A1": 1,
     "B1": 1,
@@ -156,11 +157,19 @@ def calculate_distance_matrix(
         gpd.GeoSeries(distances["destination_centroid"])
     )
 
+    same_zone = distances["origin"] == distances["destination"]
+    flagged = (same_zone & (distances["distance"] > FLAG_DISTANCE_INTERNAL)).sum()
+    if flagged > 0:
+        # pylint: disable=logging-fstring-interpolation
+        LOG.warning(
+            f"{flagged:,} ({flagged / same_zone.sum():.1%}) zones have "
+            f"internal crow-fly distance > {FLAG_DISTANCE_INTERNAL:,}"
+        )
+
     distances = distances.set_index(["origin", "destination"])["distance"]
     LOG.info(
         "Calculated %s distances %s Nan values", len(distances), distances.isna().sum()
     )
-
     return distances
 
 
