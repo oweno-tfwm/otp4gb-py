@@ -32,7 +32,7 @@ def load_centroids(
     zone_columns : ZoneCentroidColumns, optional
         Custom names for the columns containing zone ID data.
     longitude_column : str, default 'longitude'
-        Name of the column containing the longtudes.
+        Name of the column containing the longitudes.
     latitude_column : str, default 'latitude'
         Name of the column containing the latitudes.
 
