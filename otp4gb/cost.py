@@ -329,28 +329,35 @@ def iterate_responses(response_file: io.TextIOWrapper) -> Iterator[CostResults]:
 
 
 def cost_matrix_from_responses(
-    responses_file: pathlib.Path,
+    *responses_files: pathlib.Path,
     matrix_file: pathlib.Path,
     aggregation_method: AggregationMethod,
 ) -> None:
-    """Create cost matrix CSV from responses JSON lines file.
+    """Create cost matrix CSV from responses (upto multiple) JSON lines files.
 
     Parameters
     ----------
-    responses_file : pathlib.Path
-        Path to JSON lines file containing `CostResults`.
+    positional args (responses_files) : Pathlib.Path
+       pathlib.Path(s) to JSON lines file(s) containing `CostResults`.
     matrix_file : pathlib.Path
         Path to CSV file to output cost metrics to.
     aggregation_method : AggregationMethod
         Aggregation method used for generalised cost matrix.
     """
+
     matrix_data = []
-    with open(responses_file, "rt", encoding=util.TEXT_ENCODING) as responses:
-        for line in tqdm.tqdm(
-            responses, desc="Calculating cost matrix", dynamic_ncols=True
-        ):
-            results = CostResults.parse_raw(line)
-            # TODO(MB) Recalculate generalised cost if new parameters are provided
-            matrix_data.append(_matrix_costs(results))
+
+    LOG.info("Compiling %s OTP response files", len(responses_files))
+    for responses_file in responses_files:
+        LOG.info("Processing file %s",
+                 responses_file)
+        with open(responses_file, "rt", encoding=util.TEXT_ENCODING) as responses:
+            for line in tqdm.tqdm(
+                    responses, desc="Calculating cost matrix", dynamic_ncols=True
+            ):
+                results = CostResults.parse_raw(line)
+                # TODO(MB) Recalculate generalised cost if new parameters are provided
+                matrix_data.append(_matrix_costs(results))
 
     _write_matrix_files(matrix_data, matrix_file, aggregation_method)
+

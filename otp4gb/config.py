@@ -56,6 +56,7 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     crowfly_max_distance: Optional[float] = None
     ruc_lookup: Optional[parameters.RUCLookup] = None
     irrelevant_destinations: Optional[parameters.IrrelevantDestinations] = None
+    previous_trips: Optional[parameters.PreviousTrips] = None
 
     # Makes a classmethod not recognised by pylint, hence disabling self check
     @pydantic.validator("extents", pre=True)
@@ -64,6 +65,14 @@ class ProcessConfig(caf.toolkit.BaseConfig):
             return value
         return Bounds.from_dict(value)
 
+    @pydantic.validator("destination_centroids")
+    def _empty_str(cls, value: str | None):
+        # pylint disable=no-self-argument
+        """Return None if string is empty, otherwise return string"""
+        if value is None or len(value) == 0:
+            return None
+
+        return value
 
 def load_config(folder: pathlib.Path) -> ProcessConfig:
     """Read process config file."""
