@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Functionality for requesting isochrones from OTP."""
 
-##### IMPORTS #####
+# IMPORTS ####
+import dataclasses
+
 # Standard imports
 import datetime as dt
 import logging
@@ -16,12 +18,12 @@ from shapely import geometry
 # Local imports
 from otp4gb import routing
 
-##### CONSTANTS #####
+# CONSTANTS ####
 LOG = logging.getLogger(__name__)
 ISOCHRONE_API_ROUTE = "otp/traveltime/isochrone"
 
 
-##### CLASSES #####
+# CLASSES ####
 @dataclasses.dataclass
 class IsochroneParameters:
     location: geometry.Point
@@ -37,11 +39,12 @@ class IsochroneParameters:
             modes=[i.value for i in self.modes],
         )
     
+
 class IsochroneResult(pydantic.BaseModel):
     ...
 
 
-##### FUNCTIONS #####
+# FUNCTIONS ####
 def _format_cutoff(cutoff: dt.timedelta) -> str:
     seconds = round(cutoff.total_seconds())
     minutes = 0
@@ -60,6 +63,7 @@ def _format_cutoff(cutoff: dt.timedelta) -> str:
 
     return text
 
+
 def get_isochrone(server_url: str, parameters: IsochroneParameters) -> IsochroneResult:
     url = parse.urljoin(server_url, ISOCHRONE_API_ROUTE)
 
@@ -76,4 +80,3 @@ def get_isochrone(server_url: str, parameters: IsochroneParameters) -> Isochrone
             return result
         
         error_message.append(f"Retry {response.retry}: {response.message}")
-
