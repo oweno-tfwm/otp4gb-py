@@ -134,6 +134,7 @@ def main():
 
         write_build_config(filtered_graph_folder, opt_date)
         shutil.copy(os.path.join(CONF_DIR, "router-config.json"), filtered_graph_folder)
+        shutil.copy(os.path.join(CONF_DIR, "otp-config.json"), filtered_graph_folder)
 
     if os.path.exists(os.path.join(filtered_graph_folder, "graph.obj")):
         logging.warning(
