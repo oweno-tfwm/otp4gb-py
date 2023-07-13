@@ -12,14 +12,14 @@ import pathlib
 import re
 import sys
 import textwrap
-from typing import Any, Callable, NamedTuple, Mapping, Optional, Union
+from typing import Any, Callable, Mapping, NamedTuple, Optional, Union
 
 import caf.toolkit
 import numpy as np
 import pandas as pd
 import pydantic
 import tqdm
-from matplotlib import figure
+from matplotlib import figure, offsetbox, patches
 from matplotlib import pyplot as plt
 from matplotlib.backends import backend_pdf
 from pydantic import dataclasses, types
@@ -295,7 +295,7 @@ class CurveFit:
 class InfillFunction:
     """Functions for infilling costs using crow-fly distances."""
 
-    _MAX_LABEL_WIDTH = 20
+    _MAX_LABEL_WIDTH = 30
     _FMT = ".2f"
     _curve: Optional[CurveFit]
     _function: Callable[[np.ndarray], np.ndarray]
@@ -577,22 +577,45 @@ def filter_responses(responses_path: pathlib.Path, max_count: int = 10) -> pathl
     return output_path
 
 
+def fixed_annotation(ax: plt.Axes, text: str, loc: str = "upper right") -> None:
+    """Add an `AnchoredText` box to `ax` at `loc`."""
+    at = offsetbox.AnchoredText(
+        text,
+        prop={"fontsize": "small"},
+        frameon=True,
+        loc=loc,
+    )
+    at.patch.set_boxstyle(patches.BoxStyle("round"))
+    ax.add_artist(at)
+
+
 def histogram(ax: plt.Axes, data: pd.Series) -> None:
     """Plot histogram of `data` with percentage labels."""
     finite = data.values[np.isfinite(data.values)]
+
+    max_ = np.max(finite)
+    annotation = [
+        f"Min: {np.min(finite):,.0f},",
+        f"median: {np.median(finite):,.0f},",
+        f"max: {max_:,.0f},",
+        f"max OD: {data.index[data == max_][0]}.",
+    ]
+
     if len(finite) != len(data):
-        ax.text(
+        annotation.append(
             f"{len(finite)} ({len(finite) / len(data):.1%})"
-            "non-finite\nvalues excluded from plot",
-            (0.8, 0.8),
-            xycoords="axes fraction",
-            bbox=dict(boxstyle="round", facecolor="white"),
+            "non-finite values excluded from plot."
         )
+
+    fixed_annotation(ax, textwrap.fill(" ".join(annotation), width=30))
 
     counts, _, rectangles = ax.hist(finite, bins=20)
 
     total = np.sum(counts)
     for count, rect in zip(counts, rectangles):
+        if count == 0:
+            continue
+
         percentage = count / total
         if percentage > 0.01:  # Greater than 1%
             label = f"{percentage:.0%}"
@@ -606,10 +629,12 @@ def histogram(ax: plt.Axes, data: pd.Series) -> None:
             ha="center",
             va="bottom",
             fontsize="small",
+            rotation=45,
         )
 
     ax.set_ylabel("Count")
     ax.set_xlabel(data.name)
+    ax.set_title(f"Distribution of {data.name}")
 
 
 def plot_axes(
@@ -619,6 +644,8 @@ def plot_axes(
     axis_limit: AxisLimit,
 ) -> None:
     """Create plot on given axes."""
+    total_loc = "upper left"
+
     if plot_type == PlotType.HEXBIN:
         hb = ax.hexbin(data.x, data.y, extent=axis_limit, mincnt=1)
         plt.colorbar(hb, ax=ax, label="Count", aspect=40)
@@ -632,22 +659,18 @@ def plot_axes(
 
     elif plot_type == PlotType.HISTOGRAM:
         histogram(ax, data.y)
+        total_loc = "center left"
 
     else:
         raise ValueError(f"unknown plot type: {plot_type.name}")
 
-    ax.annotate(
-        f"Total Count\n{len(data.x):,}",
-        (0.8, 0.05),
-        xycoords="axes fraction",
-        bbox=dict(boxstyle="round", facecolor="white"),
-    )
+    fixed_annotation(ax, f"Total Count\n{len(data.x):,}", loc=total_loc)
 
     if plot_type in (PlotType.HEXBIN, PlotType.SCATTER):
         ax.set_xlabel(data.x.name)
         ax.set_ylabel(data.y.name)
 
-    if data.title is not None:
+    if data.title is not None and plot_type != PlotType.HISTOGRAM:
         ax.set_title(data.title)
 
 
@@ -689,7 +712,7 @@ def plot(
                     f"({len(data.outlier_indices) / len(data.x):.0%})",
                 )
 
-            ax.legend(loc="upper right")
+            ax.legend(loc="upper right", fontsize="small")
 
     return fig
 
@@ -821,10 +844,10 @@ def infill_metric(
     infilled.name = "Infilled " + metric.name
     infilled = infilled.groupby(infilled.index.names).last()
 
-    infilled_data = pd.concat([distances, infilled], axis=1)
-
     if zero_zones is not None:
         infilled = _set_zones_od(infilled, zero_zones, 0)
+
+    infilled_data = pd.concat([distances, infilled], axis=1)
 
     plot_data.append(
         PlotData(
