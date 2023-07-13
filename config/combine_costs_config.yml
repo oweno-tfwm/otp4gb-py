@@ -3,15 +3,15 @@ base_folder: C:\Users\ukmjb018\OneDrive - WSP O365\WSP_Projects\TfN Secondment\W
 
 # OTP4GB-py config to to use for centroids data
 otp4gb_config_path: WIC Walk - 20230603\config.yml
-output_folder: WIC Calculate Active
+output_folder: WIC Calculate Active\infilled - 20230713
 
 # Paths for cost files relative to cost folders
 costs_to_combine:
-  - base: WIC Walk - 20230603\costs\AM\infilled - 20230706\infill - x_plus_logx (GEH)\WALK_costs_20230614T0900-recalculated-metrics-infilled-Infilled Mean Duration.csv
-    other: WIC Cycle - 20230603\costs\AM\infilled - 20230706\infill - x_plus_logx (GEH)\BICYCLE_WALK_costs_20230614T0900-recalculated-metrics-infilled-Infilled Mean Duration.csv
+  - base: WIC Walk - 20230603\costs\AM\infilled - 20230713\infill - x_plus_logx (GEH)\WALK_costs_20230614T0900-recalculated-metrics-infilled-Infilled Mean Duration.csv
+    other: WIC Cycle - 20230603\costs\AM\infilled - 20230713\infill - x_plus_logx (GEH)\BICYCLE_WALK_costs_20230614T0900-recalculated-metrics-infilled-Infilled Mean Duration.csv
     output: AM\ACTIVE_costs_20230614T0900-Infilled Mean Duration.csv
-  - base: WIC Walk - 20230603\costs\AM\infilled - 20230706\infill - x_plus_logx (GEH)\WALK_costs_20230614T0900-recalculated-metrics-infilled-Infilled Mean Travel Distance.csv
-    other: WIC Cycle - 20230603\costs\AM\infilled - 20230706\infill - x_plus_logx (GEH)\BICYCLE_WALK_costs_20230614T0900-recalculated-metrics-infilled-Infilled Mean Travel Distance.csv
+  - base: WIC Walk - 20230603\costs\AM\infilled - 20230713\infill - x_plus_logx (GEH)\WALK_costs_20230614T0900-recalculated-metrics-infilled-Infilled Mean Travel Distance.csv
+    other: WIC Cycle - 20230603\costs\AM\infilled - 20230713\infill - x_plus_logx (GEH)\BICYCLE_WALK_costs_20230614T0900-recalculated-metrics-infilled-Infilled Mean Travel Distance.csv
     output: AM\ACTIVE_costs_20230614T0900-Infilled Mean Travel Distance.csv
 
 crow_fly_cutoff_km:

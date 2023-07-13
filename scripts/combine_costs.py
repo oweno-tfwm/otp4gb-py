@@ -116,20 +116,23 @@ class CombineCostsParameters(toolkit.BaseConfig):
     crow_fly_cutoff_km: CrowFlyCutoff
 
     @pydantic.validator("otp4gb_config_path", "output_folder", pre=True)
-    def _build_path(  # pylint: disable=no-self-argument
-        cls, value, values: dict
+    def _build_path(
+        cls, value, field: pydantic.fields.ModelField, values: dict
     ) -> pathlib.Path:
+        # pylint: disable=no-self-argument
         base = values.get("base_folder")
         assert isinstance(base, pathlib.Path)
 
-        value = pathlib.Path(value)
+        path = _join_paths(base, value)
 
-        return _join_paths(base, value)
+        if field.name == "output_folder":
+            path.mkdir(exist_ok=True, parents=True)
+
+        return path
 
     @pydantic.validator("costs_to_combine", pre=True, each_item=True)
-    def _build_cost_paths(  # pylint: disable=no-self-argument
-        cls, value: dict, values: dict
-    ) -> CostFiles:
+    def _build_cost_paths(cls, value: dict, values: dict) -> CostFiles:
+        # pylint: disable=no-self-argument
         if not isinstance(value, dict):
             raise TypeError(f"expected mapping not {type(value)}")
 
