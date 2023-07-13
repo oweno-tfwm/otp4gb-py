@@ -34,9 +34,9 @@ class IsochroneParameters:
     def parameters(self) -> dict[str, Any]:
         return dict(
             location=[str(i) for i in self.location.coords],
-            time=self.departure_time.isoformat(),
+            time=self.departure_time.isoformat(), # TODO Should include time zone +00:00
             cutoff=[_format_cutoff(i) for i in self.cutoff],
-            modes=[i.value for i in self.modes],
+            modes=[i.value for i in self.modes], # TODO Cannot just be WALK should be WALK and TRANSIT
         )
     
 
@@ -80,3 +80,9 @@ def get_isochrone(server_url: str, parameters: IsochroneParameters) -> Isochrone
             return result
         
         error_message.append(f"Retry {response.retry}: {response.message}")
+
+if __name__ == "__main__":
+    params = IsochroneParameters(geometry.Point(53.383331, -1.466666), dt.datetime(2020, 1, 13, 8, 30), [dt.timedelta(seconds=3600)], [routing.Mode.WALK])
+    req = requests.Request("GET", parse.urljoin("http://localhost:8080", ISOCHRONE_API_ROUTE), params=params.parameters())
+    prepared = req.prepare()
+    print(prepared.url)
