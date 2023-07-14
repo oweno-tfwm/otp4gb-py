@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import time
+import sys
 
 import urllib.request
 import urllib.parse
@@ -50,7 +51,7 @@ class Server:
         logger.info("Starting OTP server")
         logger.debug("About to run server with %s", command)
         self.process = subprocess.Popen(
-            command, cwd=self.base_dir, stdout=subprocess.DEVNULL
+            command, cwd=self.base_dir, stdout=sys.stdout, stderr=sys.stderr
         )
         atexit.register(lambda: self.stop())
         self._check_server()
