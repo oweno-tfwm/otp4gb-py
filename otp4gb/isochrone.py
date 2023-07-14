@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """Functionality for requesting isochrones from OTP."""
 
-# IMPORTS ####
+#### IMPORTS ####
 import dataclasses
 
 # Standard imports
 import datetime as dt
+import pytz
 import logging
 from typing import Any
 from urllib import parse
@@ -21,9 +22,11 @@ from otp4gb import routing
 # CONSTANTS ####
 LOG = logging.getLogger(__name__)
 ISOCHRONE_API_ROUTE = "otp/traveltime/isochrone"
+# WALK is not supported standalone arg - mix with another irrelevant mode
+WALK_PAIR_MODE = "FERRY"
 
 
-# CLASSES ####
+#### CLASSES ####
 @dataclasses.dataclass
 class IsochroneParameters:
     location: geometry.Point
@@ -32,11 +35,23 @@ class IsochroneParameters:
     modes: list[routing.Mode]
 
     def parameters(self) -> dict[str, Any]:
+
+        modes = [i.value for i in self.modes]
+
+        for i in range(len(modes)):
+            print(modes[i], type(modes[i]))
+            if modes[i] == "WALK":
+                modes[i] = ",".join(("WALK", WALK_PAIR_MODE))
+
+        # OTP4GB - Assumed GB Timezone
+        time_zone = pytz.timezone("Europe/London")
+        aware_time = self.departure_time.astimezone(time_zone)
+        print(modes)
         return dict(
             location=[str(i) for i in self.location.coords],
-            time=self.departure_time.isoformat(), # TODO Should include time zone +00:00
+            time=aware_time, # TODO Should include time zone +00:00
             cutoff=[_format_cutoff(i) for i in self.cutoff],
-            modes=[i.value for i in self.modes], # TODO Cannot just be WALK should be WALK and TRANSIT
+            modes=modes, # TODO Cannot just be WALK should be WALK and TRANSIT
         )
     
 
@@ -44,7 +59,7 @@ class IsochroneResult(pydantic.BaseModel):
     ...
 
 
-# FUNCTIONS ####
+#### FUNCTIONS ####
 def _format_cutoff(cutoff: dt.timedelta) -> str:
     seconds = round(cutoff.total_seconds())
     minutes = 0
@@ -81,8 +96,24 @@ def get_isochrone(server_url: str, parameters: IsochroneParameters) -> Isochrone
         
         error_message.append(f"Retry {response.retry}: {response.message}")
 
+
 if __name__ == "__main__":
-    params = IsochroneParameters(geometry.Point(53.383331, -1.466666), dt.datetime(2020, 1, 13, 8, 30), [dt.timedelta(seconds=3600)], [routing.Mode.WALK])
+    departure_time = dt.datetime(2020, 1, 13, 8, 30)
+    # TESTING -- Leave below
+    # Sheff:  53.383331, -1.466666
+    # Newcastle: 55.020825, -1.652973
+    #params = IsochroneParameters(geometry.Point(53.383331, -1.466666), departure_time, [dt.timedelta(seconds=480), dt.timedelta(seconds=600)], [routing.Mode.WALK])
+    params = IsochroneParameters(geometry.Point(53.383331, -1.466666),
+                                 dt.datetime(2020, 1, 13, 8, 30),
+                                 [dt.timedelta(seconds=120), dt.timedelta(seconds=240),
+                                  dt.timedelta(seconds=360), dt.timedelta(seconds=480),
+                                  dt.timedelta(seconds=600)],
+                                 [routing.Mode.WALK])
     req = requests.Request("GET", parse.urljoin("http://localhost:8080", ISOCHRONE_API_ROUTE), params=params.parameters())
     prepared = req.prepare()
+
+    # req url now incorrectly formatted. replace + with T to specify time
+    prepared.url = prepared.url.replace(departure_time.strftime("%Y-%m-%d+%H"),
+                                        departure_time.strftime("%Y-%m-%dT%H"))
+
     print(prepared.url)
