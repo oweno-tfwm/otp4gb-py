@@ -52,7 +52,9 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     iterinary_aggregation_method: cost.AggregationMethod = cost.AggregationMethod.MEAN
     max_walk_distance: int = 2500
     number_of_threads: pydantic.conint(ge=0, le=10) = 0
-    no_server: bool = False
+    no_server: Optional[bool] = False
+    hostname: Optional[str] = "localhost"
+    port: Optional[int] = 8080
     crowfly_max_distance: Optional[float] = None
     ruc_lookup: Optional[parameters.RUCLookup] = None
     irrelevant_destinations: Optional[parameters.IrrelevantDestinations] = None
