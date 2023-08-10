@@ -49,3 +49,6 @@ generalised_cost_factors:
 iterinary_aggregation_method: mean
 max_walk_distance: 10000
 number_of_threads: 10
+no_server: no
+hostname: localhost
+port: 8080

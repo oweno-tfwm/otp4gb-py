@@ -48,7 +48,7 @@ def main():
     opt_centroids_path = os.path.join(ASSET_DIR, config.centroids)
 
     # Start OTP Server
-    server = Server(opt_base_folder)
+    server = Server(opt_base_folder, hostname=config.hostname, port=config.port)
     if not config.no_server:
         logger.info("Starting server")
         server.start()
@@ -90,7 +90,7 @@ def main():
                 "Calculating costs for %s - %s", time_period.name, ", ".join(modes)
             )
             cost_settings = cost.CostSettings(
-                server_url="http://localhost:8080",
+                server_url="http://" + config.hostname + ":" + str(config.port),
                 modes=modes,
                 datetime=travel_datetime,
                 arrive_by=True,

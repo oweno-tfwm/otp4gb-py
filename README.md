@@ -121,6 +121,8 @@ in table 1.
 | max_walk_distance            | -                     | Integer                                                          | 2500                                   | Maximum walking distance allowed on a single route.                                                             |
 | number_of_threads            | -                     | 0 - 10                                                           | 0                                      | Number of threads to use when running the Python process, doesn't apply to the OTP Java server.                 |
 | no_server                    | -                     | Boolean                                                          | False                                  | Turns off starting up a new OTP Java server, if this is already running.                                        |
+| hostname                     | -                     | Text                                                             | localhost                              | hostname of the OTP server to connect to (or start).                                                            |
+| port                         | -                     | Integer                                                          | 8080                                   | port number of the OTP server to connect to (or start).                                                         |
 
 ### Prepare
 This section discusses the prepare Python script, before this make sure the dependencies are
