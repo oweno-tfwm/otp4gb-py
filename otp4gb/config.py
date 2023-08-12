@@ -13,13 +13,13 @@ import caf.toolkit
 
 from otp4gb import cost, parameters, routing, util
 from otp4gb.centroids import Bounds
+import otp4gb.logging 
 
-
-ROOT_DIR = pathlib.Path().absolute()
+ROOT_DIR = otp4gb.logging.ROOT_DIR
 BIN_DIR = ROOT_DIR / "bin"
 CONF_DIR = ROOT_DIR / "config"
 ASSET_DIR = ROOT_DIR / "assets"
-LOG_DIR = ROOT_DIR / "logs"
+LOG_DIR = otp4gb.logging.LOG_DIR
 
 # if you're running on a virtual machine (no virtual memory/page disk)
 # this must not exceed the total amount of RAM.
@@ -59,6 +59,8 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     ruc_lookup: Optional[parameters.RUCLookup] = None
     irrelevant_destinations: Optional[parameters.IrrelevantDestinations] = None
     previous_trips: Optional[parameters.PreviousTrips] = None
+    isochrone_configuration: Optional[parameters.IsochroneConfiguration] = None
+
 
     # Makes a classmethod not recognised by pylint, hence disabling self check
     @pydantic.validator("extents", pre=True)

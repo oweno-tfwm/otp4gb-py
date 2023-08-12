@@ -20,6 +20,7 @@ gtfs_files:
 
 # Length of time to search before the travel time,
 # if not given then it is calculated based on route availability
+# if generating isochrones, this is the maximum travel time
 time_periods:
   - name: AM
     travel_time: 09:00
@@ -81,4 +82,10 @@ irrelevant_destinations:
 previous_trips:
   path: previously_requested_trips.csv
   od_column: od_code
+
+# Optional settings when running in isochrone generation mode
+isochrone_configuration:
+  step_minutes: 15
+  buffer_metres: 100
+  zone_column: zone_name #field name from centroids.csv that is used to build the output isochrone field names - if not unique then areas will over-write each other
 

@@ -92,6 +92,15 @@ class IrrelevantDestinations:
     zone_column: str = "zone_id"
 
 
+@dataclasses.dataclass
+class IsochroneConfiguration:
+    """settings for isochrone generation."""
+
+    step_minutes: Optional[int] = 15
+    buffer_metres: Optional[int] = 100
+    zone_column: Optional[str] = "zone_id"
+
+
 ##### FUNCTIONS #####
 def _to_crs(data: gpd.GeoDataFrame, crs: str, name: str) -> gpd.GeoDataFrame:
     """Convert `data` to `crs` and raise error for invalid geometries."""
