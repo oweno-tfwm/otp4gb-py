@@ -1,6 +1,5 @@
 {
-	"timeouts": [5,4,3,1],
-	"routingDefaults": {
-		"driveOnRight": false
-	}
+    "streetRoutingTimeout": "10s",
+    "routingDefaults": {
+    }
 }
