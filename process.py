@@ -4,14 +4,16 @@ from __future__ import annotations
 import argparse
 import atexit
 import datetime
+from json import load
 import logging
 import pathlib
 
 from pydantic import dataclasses
 import pydantic
+from otp4gb import centroids
 
-from otp4gb.centroids import load_centroids, ZoneCentroidColumns
-from otp4gb.config import ASSET_DIR, load_config
+from otp4gb.centroids import load_centroids, ZoneCentroidColumns, ZoneCentroids
+from otp4gb.config import ASSET_DIR, ProcessConfig, load_config
 from otp4gb.logging import configure_app_logging
 from otp4gb.otp import Server
 from otp4gb.util import Timer
@@ -19,12 +21,6 @@ from otp4gb import cost, parameters
 
 
 logger = logging.getLogger(__name__)
-
-FILENAME_PATTERN = (
-    "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_"
-    "{location_name}_ToArriveBy_{arrival_time:%Y%m%d_%H%M}_"
-    "within_{journey_time:_>4n}_mins.geojson"
-)
 
 
 @dataclasses.dataclass
@@ -63,25 +59,7 @@ class ProcessArgs:
         return ProcessArgs(**vars(parsed_args))
 
 
-def main():
-    arguments = ProcessArgs.parse()
-
-    _process_timer = Timer()
-
-    configure_app_logging(logging.INFO, dir=arguments.folder / "logs")
-
-    @atexit.register
-    def report_time():
-        logger.info("Finished in %s", _process_timer)
-
-    config = load_config(arguments.folder)
-
-    server = Server(arguments.folder, hostname=config.hostname, port=config.port)
-    if arguments.save_parameters:
-        logger.info("Saving OTP request parameters without starting OTP")
-    elif not config.no_server:
-        logger.info("Starting server")
-        server.start()
+def loadCentroids(config :ProcessConfig) -> ZoneCentroids:
 
     logger.info("Loading centroids")
 
@@ -103,6 +81,32 @@ def main():
     )
 
     logger.info("Considering %d centroids", len(centroids.origins))
+
+    return centroids
+
+
+
+def main():
+    arguments = ProcessArgs.parse()
+
+    _process_timer = Timer()
+
+    configure_app_logging(logging.INFO, dir=arguments.folder / "logs")
+
+    @atexit.register
+    def report_time():
+        logger.info("Finished in %s", _process_timer)
+
+    config = load_config(arguments.folder)
+
+    server = Server(arguments.folder, hostname=config.hostname, port=config.port)
+    if arguments.save_parameters:
+        logger.info("Saving OTP request parameters without starting OTP")
+    elif not config.no_server:
+        logger.info("Starting server")
+        server.start()
+
+    centroids = loadCentroids(config)
 
     for time_period in config.time_periods:
         search_window_seconds = None

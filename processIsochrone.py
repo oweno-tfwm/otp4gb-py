@@ -26,7 +26,7 @@ from contextlib import ExitStack
 import otp4gb.batch
 from otp4gb.logging import configure_app_logging
 import time
-from process import ProcessArgs
+from process import ProcessArgs, loadCentroids
 
 logger = logging.getLogger(__name__)
 
@@ -58,27 +58,7 @@ def main():
         logger.info("Starting server")
         server.start()
 
-    logger.info("Loading centroids")
-
-    # Check if config.destination_centroids has been supplied
-    if config.destination_centroids is None:
-        destination_centroids_path = None
-        logger.info("No destination centroids detected. Proceeding with %s",
-                    config.centroids,
-                    )
-    else:
-        destination_centroids_path = pathlib.Path(ASSET_DIR) / config.destination_centroids
-
-    centroids = load_centroids(
-        pathlib.Path(ASSET_DIR) / config.centroids,
-        destination_centroids_path,
-        # TODO(MB) Read parameters from config to define column names
-        zone_columns=ZoneCentroidColumns(),
-        extents=config.extents,
-    )
-
-    logger.info("Considering %d centroids", len(centroids.origins))
-
+    centroids = loadCentroids(config)
 
     # Create output directory
     isochrones_dir = os.path.join(arguments.folder, 'isochrones')
