@@ -28,9 +28,6 @@ def file_handler_factory(filename, dir=LOG_DIR, level=logging.INFO):
     handler.setLevel(level)
     return handler
 
-def get_logger(*args, **kwargs):
-    logger = logging.getLogger(*args, **kwargs)
-    return logger
  
 def configure_app_logging(consoleLevel=logging.INFO, fileLevel=None, dir=LOG_DIR):
     """Sets root level logging, creates ./logs folder with file logger writing to it:

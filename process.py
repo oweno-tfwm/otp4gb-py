@@ -18,7 +18,7 @@ from otp4gb.util import Timer
 from otp4gb import cost, parameters
 
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 FILENAME_PATTERN = (
     "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_"
