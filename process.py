@@ -12,14 +12,13 @@ import pydantic
 
 from otp4gb.centroids import load_centroids, ZoneCentroidColumns
 from otp4gb.config import ASSET_DIR, load_config
-from otp4gb.logging import file_handler_factory, get_logger
+from otp4gb.logging import configure_app_logging
 from otp4gb.otp import Server
 from otp4gb.util import Timer
 from otp4gb import cost, parameters
 
 
-logger = get_logger()
-logger.setLevel(logging.INFO)
+logger = logging.get_logger(__name__)
 
 FILENAME_PATTERN = (
     "Buffered{buffer_size}m_IsochroneBy_{mode}_ToWorkplaceZone_"
@@ -69,14 +68,11 @@ def main():
 
     _process_timer = Timer()
 
+    configure_app_logging(logging.INFO, dir=arguments.folder / "logs")
+
     @atexit.register
     def report_time():
         logger.info("Finished in %s", _process_timer)
-
-    log_file = file_handler_factory(
-        f"process-{datetime.date.today():%Y%m%d}.log", arguments.folder / "logs"
-    )
-    logger.addHandler(log_file)
 
     config = load_config(arguments.folder)
 
