@@ -34,17 +34,34 @@ OTP_ERRORS = {
 
 
 ##### CLASSES #####
+# see otp source TransitMode.modesConsideredTransitByUsers()  and enum ApiRequestMode  
 class Mode(enum.StrEnum):
-    TRANSIT = "TRANSIT"
-    BUS = "BUS"
-    RAIL = "RAIL"
-    TRAM = "TRAM"
+    TRANSIT = "TRANSIT" #RAIL, COACH, SUBWAY, BUS, TRAM, FERRY, AIRPLANE, CABLE_CAR, GONDOLA, FUNICULAR, TROLLEYBUS, MONORAIL, TAXI;
+    BUS = "BUS" #included in 'transit'
+    RAIL = "RAIL" #included in 'transit'
+    TRAM = "TRAM" #included in 'transit'
     WALK = "WALK"
     BICYCLE = "BICYCLE"
+    SCOOTER = "SCOOTER"
+    CAR = "CAR"
+    SUBWAY = "SUBWAY" #included in 'transit'
+    FERRY = "FERRY" #included in 'transit'
+    CABLE_CAR = "CABLE_CAR" #included in 'transit'
+    GONDOLA = "GONDOLA" #included in 'transit'
+    FUNICULAR = "FUNICULAR" #included in 'transit'
+    AIRPLANE = "AIRPLANE" #included in 'transit'
+    TROLLEYBUS = "TROLLEYBUS" #included in 'transit'
+    MONORAIL = "MONORAIL" #included in 'transit'
+    CARPOOL = "CARPOOL"
+    TAXI = "TAXI" #included in 'transit'
+    FLEX = "FLEX"
 
     @staticmethod
     def transit_modes() -> set[Mode]:
-        return {Mode.TRANSIT, Mode.BUS, Mode.RAIL, Mode.TRAM}
+        return {Mode.TRANSIT, Mode.BUS, Mode.RAIL, 
+                Mode.TRAM, Mode.SUBWAY, Mode.FERRY, 
+                Mode.CABLE_CAR, Mode.GONDOLA, Mode.FUNICULAR, 
+                Mode.AIRPLANE, Mode.TROLLEYBUS, Mode.MONORAIL, Mode.TAXI }
 
 
 class RoutePlanParameters(pydantic.BaseModel):
