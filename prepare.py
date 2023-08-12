@@ -12,8 +12,7 @@ from otp4gb.config import ASSET_DIR, CONF_DIR, load_config, write_build_config
 from otp4gb.centroids import Bounds
 from otp4gb.otp import prepare_graph
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 
 def load_bounds() -> dict[str, Bounds]:
@@ -39,6 +38,8 @@ prepare.py [-F|--force] -b bounds -d date <path to config root>
 
 
 def main():
+    logging.basicConfig(level=logging.DEBUG)
+    
     try:
         opts, args = getopt.getopt(sys.argv[1:], "b:d:F", ["bounds=", "date=", "force"])
     except getopt.GetoptError as err:
@@ -137,6 +138,7 @@ def main():
 
         write_build_config(filtered_graph_folder, opt_date)
         shutil.copy(os.path.join(CONF_DIR, "router-config.json"), filtered_graph_folder)
+        shutil.copy(os.path.join(CONF_DIR, "otp-config.json"), filtered_graph_folder)
 
     if os.path.exists(os.path.join(filtered_graph_folder, "graph.obj")):
         logging.warning(
