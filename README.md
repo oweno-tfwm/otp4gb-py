@@ -1,6 +1,6 @@
 # OTP4GB-py
 
-This tool is a Python wrapper around [Open Trip Planner (OTP) v2](https://docs.opentripplanner.org/en/v2.1.0/)
+This tool is a Python wrapper around [Open Trip Planner (OTP) v2](https://docs.opentripplanner.org/en/v2.3.0/)
 which produces cost metrics for public transport routing between given positions in Great Britain.
 
 This is an updated version of OTP4GB-py produced by Open Innovations (available at
@@ -69,7 +69,7 @@ and folders:
 - apache-maven-3.8.6: folder containing the maven installation
 - lib: java dependancies
 - gtfs-filter-0.1.jar: GTFS filter Java executable file
-- otp-2.1.0-shaded.jar: OTP server Java executable file
+- otp-2.3.0-shaded.jar: OTP server Java executable file
 - osmconvert64: OSM converter executable file
 
 The final requirement before running the tool is to fill the "assets" directory with
