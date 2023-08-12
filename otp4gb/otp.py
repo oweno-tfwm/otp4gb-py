@@ -41,7 +41,7 @@ class Server:
         self.process = None
         self.hostname = hostname
 
-    def start(self):
+    def start(self, dumpStdoutToNull=True ):
         command = _java_command(SERVER_MAX_HEAP) + [
             r"graphs\filtered",
             "--load",
@@ -51,7 +51,7 @@ class Server:
         logger.info("Starting OTP server")
         logger.debug("About to run server with %s", command)
         self.process = subprocess.Popen(
-            command, cwd=self.base_dir, stdout=subprocess.DEVNULL
+            command, cwd=self.base_dir, stdout=(subprocess.DEVNULL if dumpStdoutToNull else None)
         )
         atexit.register(lambda: self.stop())
         self._check_server()
@@ -91,12 +91,15 @@ class Server:
         return body
 
     def get_url(self, path="", query=None):
+        return self.get_root_url(urllib.parse.urljoin("routers/filtered/", path), query)
+
+    def get_root_url(self, path="", query=None):
         qs = urllib.parse.urlencode(query, safe=",:") if query else ""
         url = urllib.parse.urlunsplit(
             [
                 "http",
                 self.hostname + ":" + self.port,
-                urllib.parse.urljoin("otp/routers/filtered/", path),
+                urllib.parse.urljoin("otp/", path),
                 qs,
                 None,
             ]
