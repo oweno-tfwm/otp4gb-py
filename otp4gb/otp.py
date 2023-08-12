@@ -59,7 +59,7 @@ class Server:
 
     def _check_server(self):
         logger.info("Checking server")
-        TIMEOUT = 30
+        TIMEOUT = 15
         MAX_RETRIES = 10
         server_up = False
         retries = 0
