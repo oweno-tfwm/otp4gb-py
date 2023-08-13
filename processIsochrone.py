@@ -6,6 +6,7 @@ import atexit
 import csv
 import datetime
 import logging
+import math
 import multiprocessing
 import concurrent.futures
 import threading
@@ -119,9 +120,11 @@ def main():
             file = stack.enter_context(open(matrix_filename, 'a'))
             first = True
 
+            numChunks = math.ceil(len(jobs) / (config.number_of_threads * 5))
+
             for idx, batch in enumerate(chunker(jobs, config.number_of_threads*5)):
                 logger.info(
-                    "==================== Running batch %d ====================", idx+1)
+                    "==================== Running batch %d of %d ====================", idx+1, numChunks)
                 logger.info("Dispatching %d jobs", len(batch))
 
                 taskFutures = [threadPool.submit(run_batch_catch_errors, job) for job in batch]
