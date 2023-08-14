@@ -121,7 +121,8 @@ def run_batch(batch_args: dict) -> list[dict]:
 
     data = parse_to_geo(data)
 
-    data = buffer_geometry(data, buffer_size=_buffer_size)
+    if (_buffer_size > 0):
+        data = buffer_geometry(data, buffer_size=_buffer_size)
 
     data = sort_by_descending_time(data)
     largest = data.loc[[0]]
