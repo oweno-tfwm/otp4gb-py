@@ -5,10 +5,13 @@ import argparse
 import atexit
 import csv
 import datetime
+import glob
+import gzip
 import logging
 import math
 import multiprocessing
 import concurrent.futures
+import shutil
 import threading
 import os
 import pandas as pd
@@ -71,6 +74,7 @@ def main():
     if isochroneConfig is None :
         isochroneConfig = parameters.IsochroneConfiguration()
 
+    runDate = datetime.date.today().isoformat()
 
     for time_period in config.time_periods:
 
@@ -83,7 +87,7 @@ def main():
             "Given date / time is assumed to be in local timezone: %s",
             travel_datetime.tzinfo,
         )
-
+        
         jobs = build_run_spec(name_key=isochroneConfig.zone_column, 
                                     modes=config.modes, 
                                     centroids=centroids, 
@@ -151,6 +155,25 @@ def main():
                 logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
                 pd.DataFrame.from_dict(matrix).to_csv(file, index=False, header=first, lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
                 first=False
+
+
+                # compress the output files so it's easier to handle
+                added_files = []
+                geojson_file = f'runDate_{runDate}_modelDate_{travel_datetime.isoformat()}_batch{idx+1:03}.geoJson.gz'
+                geojson_file = geojson_file.replace(',', '_')
+                geojson_file = geojson_file.replace(':', '-')
+                geojson_file = geojson_file.replace(' ', '_')
+
+                with gzip.open(os.path.join(isochrones_dir, geojson_file), 'wb') as gz_file:
+                    for file_path in glob.glob(f'{isochrones_dir}/*.geojson'):
+                        with open(file_path, 'rb') as input_file:
+                            shutil.copyfileobj(input_file, gz_file)
+                        added_files.append(file_path)
+
+                # Delete the successfully added files
+                for file_path in added_files:
+                    os.remove(file_path)
+
                 
             logger.info("all tasks complete, shutting down threadpool")
             threadPool.shutdown()
