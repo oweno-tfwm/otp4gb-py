@@ -1,0 +1,21 @@
+folders:
+  - C:\Users\ukmjb018\OneDrive - WSP O365\WSP_Projects\TfN Secondment\WIC\OTP4GB-py Runs\OTP4GB-Py Folders\WIC Bus North
+  - C:\Users\ukmjb018\OneDrive - WSP O365\WSP_Projects\TfN Secondment\WIC\OTP4GB-py Runs\OTP4GB-Py Folders\WIC Walk - 20230603
+  - C:\Users\ukmjb018\OneDrive - WSP O365\WSP_Projects\TfN Secondment\WIC\OTP4GB-py Runs\OTP4GB-Py Folders\WIC Cycle - 20230603
+infill_columns:
+  mean_duration: 0.01666666 # seconds to minutes
+  mean_travel_distance: 0.001 # metres to km
+
+# Inclusive range of zones to set cost to zero
+zero_cost_zones:
+  start: 1095
+  end: 1156
+
+infill_methods:
+  - mean_ratio
+  - linear
+  - x_plus_logx
+  - logarithmic
+
+outlier_method: geh
+outlier_cutoff: 10

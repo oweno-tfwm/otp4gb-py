@@ -173,9 +173,17 @@ def load_centroids(
 
     origins = _read_centroids(origins_path, columns, longitude_column, latitude_column)
     origins_clipped = _clip(origins, extents)
+    valid_origins = (
+        ~origins_clipped[zone_columns.id].isna()
+    ) & origins_clipped.geometry.is_valid
 
     if destinations_path is None:
-        LOG.info("Loaded origin centroids only from: %s", origins_path.name)
+        LOG.info(
+            "Loaded %s (%s valid geometries with IDs) origin centroids only from: %s",
+            len(origins_clipped),
+            valid_origins.sum(),
+            origins_path.name,
+        )
         return ZoneCentroids(zone_columns, origins_clipped, None)
 
     destinations = _read_centroids(
@@ -210,8 +218,19 @@ def load_centroids(
             destinations_clipped, destinations, origin_ids, zone_columns.id
         )
 
+    valid_origins = (
+        ~origins_clipped[zone_columns.id].isna()
+    ) & origins_clipped.geometry.is_valid
+    valid_destinations = (
+        ~destinations_clipped[zone_columns.id].isna()
+    ) & destinations_clipped.geometry.is_valid
+
     LOG.info(
-        "Loaded origin and destination centroids from: %s and %s",
+        "Loaded %s origin (%s valid) and destination "
+        "(%s valid) centroids from: %s and %s",
+        len(origins_clipped),
+        valid_origins.sum(),
+        valid_destinations.sum(),
         origins_path.name,
         destinations_path.name,
     )

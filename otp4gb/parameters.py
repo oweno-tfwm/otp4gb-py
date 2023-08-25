@@ -20,7 +20,7 @@ from otp4gb import centroids, routing, util
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
 CROWFLY_DISTANCE_CRS = "EPSG:27700"
-
+FLAG_DISTANCE_INTERNAL = 10_000
 ROOT_DIR = pathlib.Path().absolute()
 ASSET_DIR = ROOT_DIR / "assets"
 # TODO(MB) Add this as a lookup within config rather than hard-code.
@@ -118,9 +118,9 @@ def _to_crs(data: gpd.GeoDataFrame, crs: str, name: str) -> gpd.GeoDataFrame:
     return data
 
 
-def _calculate_distance_matrix(
-        origins: gpd.GeoDataFrame, destinations: gpd.GeoDataFrame, crs: str
-) -> pd.DataFrame:
+def calculate_distance_matrix(
+    origins: gpd.GeoDataFrame, destinations: gpd.GeoDataFrame, crs: str
+) -> pd.Series:
     """Calculate distances between all `origins` and `destinations`.
 
     Geometries are converted to `crs` before calculating distance.
@@ -133,6 +133,12 @@ def _calculate_distance_matrix(
     crs: str
         Name of CRS to convert to before calculating
         distances e.g. 'EPSG:27700'.
+
+    Returns
+    -------
+    pd.Series
+        Series of crow-fly distances with index columns
+        'origin' and 'destination'.
 
     Raises
     ------
@@ -162,7 +168,20 @@ def _calculate_distance_matrix(
         gpd.GeoSeries(distances["destination_centroid"])
     )
 
-    return distances.set_index(["origin", "destination"])["distance"]
+    same_zone = distances["origin"] == distances["destination"]
+    flagged = (same_zone & (distances["distance"] > FLAG_DISTANCE_INTERNAL)).sum()
+    if flagged > 0:
+        # pylint: disable=logging-fstring-interpolation
+        LOG.warning(
+            f"{flagged:,} ({flagged / same_zone.sum():.1%}) zones have "
+            f"internal crow-fly distance > {FLAG_DISTANCE_INTERNAL:,}"
+        )
+
+    distances = distances.set_index(["origin", "destination"])["distance"]
+    LOG.info(
+        "Calculated %s distances %s Nan values", len(distances), distances.isna().sum()
+    )
+    return distances
 
 
 def _summarise_list(values: Sequence | np.ndarray, max_values: int = 10) -> str:
@@ -433,7 +452,7 @@ def build_calculation_parameters(
 
     # Check for & Load crowfly max distance filter
     if settings.crowfly_max_distance is not None and settings.crowfly_max_distance > 0:
-        distances = _calculate_distance_matrix(
+        distances = calculate_distance_matrix(
             origins,
             origins if destinations is None else destinations,
             crowfly_distance_crs,
