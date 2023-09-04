@@ -10,7 +10,8 @@ from yaml import safe_load
 
 from otp4gb.gtfs_filter import filter_gtfs_files
 from otp4gb.osmconvert import osm_convert
-from otp4gb.config import ASSET_DIR, CONF_DIR, load_config, write_build_config, Bounds
+from otp4gb.config import ASSET_DIR, CONF_DIR, load_config, write_build_config
+from otp4gb.centroids import Bounds
 from otp4gb.otp import prepare_graph, OTP_VERSION
 
 logging.basicConfig(level=logging.DEBUG)
@@ -132,7 +133,9 @@ def main():
 
     if os.path.exists(filtered_graph_folder):
         logging.warning(
-            "A folder of filtered GTFS and OSM files already exists. To filter again, delete this folder."
+            "A folder of filtered GTFS and OSM files already exists. "
+            "To filter again, delete this folder, or re-run prepare with "
+            "force overwrite (-f) enabled."
         )
     else:
         os.makedirs(filtered_graph_folder)
@@ -162,7 +165,9 @@ def main():
 
     if os.path.exists(os.path.join(filtered_graph_folder, "graph.obj")):
         logging.warning(
-            "A graph.obj file already exists and will be used. To rebuild the transport graph delete the graph.obj file."
+            "A graph.obj file already exists and will be used. "
+            "To rebuild the transport graph delete the graph.obj file,"
+            "or re-run prepare with force overwrite (-f) enabled."
         )
     else:
         prepare_graph(filtered_graph_folder)

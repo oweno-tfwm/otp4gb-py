@@ -1,18 +1,21 @@
+"""Run OTP4GB-py and produce cost matrices."""
+from __future__ import annotations
+
+import argparse
 import atexit
 import datetime
 import logging
-import os
 import pathlib
-import sys
 
-from shapely import geometry
+from pydantic import dataclasses
+import pydantic
 
 from otp4gb.centroids import load_centroids, ZoneCentroidColumns
-from otp4gb.config import ASSET_DIR, load_config, ProcessConfig
+from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.logging import file_handler_factory, get_logger
 from otp4gb.otp import Server
 from otp4gb.util import Timer
-from otp4gb import cost
+from otp4gb import cost, parameters
 
 
 logger = get_logger()
@@ -25,49 +28,86 @@ FILENAME_PATTERN = (
 )
 
 
+@dataclasses.dataclass
+class ProcessArgs:
+    """Arguments for process script.
+
+    Attributes
+    ----------
+    folder : pathlib.Path
+        Path to inputs directory.
+    save_parameters : bool, default False
+        If true saves build parameters and
+        exit.
+    """
+
+    folder: pydantic.DirectoryPath
+    save_parameters: bool = False
+
+    @classmethod
+    def parse(cls) -> ProcessArgs:
+        """Parse command line arguments."""
+        parser = argparse.ArgumentParser(
+            description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+        parser.add_argument(
+            "folder", type=pathlib.Path, help="folder containing config file and inputs"
+        )
+        parser.add_argument(
+            "-p",
+            "--save_parameters",
+            action="store_true",
+            help="save build parameters to JSON lines files and exit",
+        )
+
+        parsed_args = parser.parse_args()
+        return ProcessArgs(**vars(parsed_args))
+
+
 def main():
+    arguments = ProcessArgs.parse()
+
     _process_timer = Timer()
 
     @atexit.register
     def report_time():
         logger.info("Finished in %s", _process_timer)
 
-    try:
-        opt_base_folder = os.path.abspath(sys.argv[1])
-    except IndexError as error:
-        logger.error("No path provided")
-        raise ValueError("Base folder not provided") from error
-
     log_file = file_handler_factory(
-        "process.log", os.path.join(opt_base_folder, "logs")
+        f"process-{datetime.date.today():%Y%m%d}.log", arguments.folder / "logs"
     )
     logger.addHandler(log_file)
 
-    config = load_config(opt_base_folder)
-
-    opt_centroids_path = os.path.join(ASSET_DIR, config.centroids)
+    config = load_config(arguments.folder)
 
     # Start OTP Server
     server = Server(opt_base_folder, hostname=config.hostname, port=config.port)
-    if not config.no_server:
+    if arguments.save_parameters:
+        logger.info("Saving OTP request parameters without starting OTP")
+    elif not config.no_server:
         logger.info("Starting server")
         server.start()
 
-    # Load Northern Boundaries
     logger.info("Loading centroids")
-    # TODO(MB) Read parameters for config to define column names
-    centroids_columns = ZoneCentroidColumns()
-    centroids = load_centroids(opt_centroids_path, zone_columns=centroids_columns)
 
-    # Filter MSOAs by bounding box
-    clip_box = geometry.box(
-        config.extents.min_lon,
-        config.extents.min_lat,
-        config.extents.max_lon,
-        config.extents.max_lat,
+    # Check if config.destination_centroids has been supplied
+    if config.destination_centroids is None:
+        destination_centroids_path = None
+        logger.info("No destination centroids detected. Proceeding with %s",
+                    config.centroids,
+                    )
+    else:
+        destination_centroids_path = pathlib.Path(ASSET_DIR) / config.destination_centroids
+
+    centroids = load_centroids(
+        pathlib.Path(ASSET_DIR) / config.centroids,
+        destination_centroids_path,
+        # TODO(MB) Read parameters for config to define column names
+        zone_columns=ZoneCentroidColumns(),
+        extents=config.extents,
     )
-    centroids = centroids.clip(clip_box)
-    logger.info("Considering %d centroids", len(centroids))
+
+    logger.info("Considering %d centroids", len(centroids.origins))
 
     for time_period in config.time_periods:
         search_window_seconds = None
@@ -96,25 +136,54 @@ def main():
                 arrive_by=True,
                 search_window_seconds=search_window_seconds,
                 max_walk_distance=config.max_walk_distance,
-                crowfly_max_distance=config.crowfly_max_distance
+                crowfly_max_distance=config.crowfly_max_distance,
             )
 
-            matrix_path = pathlib.Path(
-                opt_base_folder
-            ) / "costs/{tp_name}/{modes}_costs_{dt:%Y%m%dT%H%M}.csv".format(
-                tp_name=time_period.name, modes="_".join(modes), dt=travel_datetime
+            if arguments.save_parameters:
+                logger.info(
+                    "Building parameters for %s - %s",
+                    time_period.name,
+                    ", ".join(modes),
+                )
+
+                parameters_path = arguments.folder / (
+                    f"parameters/{time_period.name}_{'_'.join(modes)}"
+                    f"_parameters_{travel_datetime:%Y%m%dT%H%M}.csv"
+                )
+                parameters_path.parent.mkdir(exist_ok=True)
+
+                parameters.save_calculation_parameters(
+                    zones=centroids,
+                    settings=cost_settings,
+                    output_file=parameters_path,
+                    ruc_lookup=config.ruc_lookup,
+                    irrelevant_destinations=config.irrelevant_destinations,
+                )
+                continue
+
+            logger.info(
+                "Calculating costs for %s - %s", time_period.name, ", ".join(modes)
+            )
+            matrix_path = arguments.folder / (
+                f"costs/{time_period.name}/"
+                f"{'_'.join(modes)}_costs_{travel_datetime:%Y%m%dT%H%M}.csv"
             )
             matrix_path.parent.mkdir(exist_ok=True, parents=True)
 
+            #TODO: Add requested trips here
+            jobs = parameters.build_calculation_parameters(
+                zones=centroids,
+                settings=cost_settings,
+                ruc_lookup=config.ruc_lookup,
+                irrelevant_destinations=config.irrelevant_destinations,
+            )
+
             cost.build_cost_matrix(
-                centroids,
-                centroids_columns,
-                cost_settings,
-                matrix_path,
-                config.generalised_cost_factors,
-                config.iterinary_aggregation_method,
-                config.number_of_threads,
-                config.crowfly_max_distance
+                jobs=jobs,
+                matrix_file=matrix_path,
+                generalised_cost_parameters=config.generalised_cost_factors,
+                aggregation_method=config.iterinary_aggregation_method,
+                workers=config.number_of_threads,
             )
 
     # Stop OTP Server

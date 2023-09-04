@@ -11,12 +11,11 @@ import pathlib
 from typing import ClassVar
 import pandas as pd
 
+import caf.toolkit
 import pydantic
 
-# Third party imports
+from otp4gb import cost
 
-# Local imports
-from otp4gb import config_base, cost
 
 ##### CONSTANTS #####
 LOG = logging.getLogger("otp4gb.accessibility")
@@ -24,6 +23,7 @@ COST_INDEX_COLUMNS = [
     f"{i}{j}" for i in ("origin", "destination") for j in ("", "_id", "_zone_system")
 ]
 COST_COLUMNS = ["duration"]
+
 
 ##### CLASSES #####
 # TODO(MB) Move class to OTP4GB package and add flexibility
@@ -81,7 +81,7 @@ class Log:
         logging.shutdown()
 
 
-class AccessibilityParameters(config_base.BaseConfig):
+class AccessibilityParameters(caf.toolkit.BaseConfig):
     """Config class for accessibility script."""
 
     cost_metrics: list[pydantic.FilePath]
@@ -91,7 +91,8 @@ class AccessibilityParameters(config_base.BaseConfig):
     aggregation_method: cost.AggregationMethod = cost.AggregationMethod.MEAN
 
 
-class AccessibilityArguments(pydantic.BaseModel):
+# Pylint incorrectly flags no-member for pydantic.BaseModel
+class AccessibilityArguments(pydantic.BaseModel):  # pylint: disable=no-member
     """Handles parsing commandline arguments."""
 
     config_file: pydantic.FilePath
