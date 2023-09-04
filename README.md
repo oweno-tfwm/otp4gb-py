@@ -5,8 +5,8 @@ which produces cost metrics for public transport routing between given positions
 
 This is an updated version of OTP4GB-py produced by Open Innovations (available at
 [github.com/open-innovations/otp4gb-py](https://github.com/open-innovations/otp4gb-py)),
-which itself is a port port of the [OTP4GB](https://github.com/odileeds/OTP4GB)
-tool written by Tom Forth at Open Innovations.
+which itself is a port of the [OTP4GB](https://github.com/odileeds/OTP4GB) tool written
+by Tom Forth at Open Innovations.
 
 ## Overview
 This flowchart details the full OTP4GB-Py routing and cost calculation process. The process is
@@ -97,6 +97,7 @@ an [example config](example-config.yml) is provided and the parameters for the i
 in table 1.
 
 **Table 1:** *Details the parameters available in the config file and their default values.*
+
 | Parameter                    | Sub-Parameter         | Type                                                             | Default                                | Description                                                                                                     |
 | :--------------------------- | :-------------------- | :--------------------------------------------------------------- | :------------------------------------- | :-------------------------------------------------------------------------------------------------------------- |
 | date                         | -                     | Date (YYYY-MM-DD)                                                | N/A                                    | Date on which the routing should be calculated for.                                                             |
@@ -111,6 +112,7 @@ in table 1.
 | ^                            | search_window_minutes | Integer                                                          | Calculated based on route availability | Number of minutes before `travel_time` when routes can arrive.                                                  |
 | modes                        | -                     | List of lists of modes (TRANSIT, BUS, RAIL, TRAM, WALK, BICYCLE) | N/A                                    | List of the multiple modes to be considered for routing, each item is list of modes for a single matrix output. |
 | centroids                    | -                     | File name                                                        | N/A                                    | Name of the zone centroids file, should be found in the "assets" folder.                                        |
+| destination_centroids        | -                     | File name                                                        | N/A                                    | **Optional** name of the centroids file for the zone destinations (if they differ).                             |
 | generalised_cost_factors     | wait_time             | Real                                                             | 1.0                                    | Factors for applying to the different metrics used when calculating the generalised cost.                       |
 | ^                            | transfer_number       | Real                                                             | 1.0                                    | ^                                                                                                               |
 | ^                            | walk_time             | Real                                                             | 1.0                                    | ^                                                                                                               |
@@ -121,8 +123,15 @@ in table 1.
 | max_walk_distance            | -                     | Integer                                                          | 2500                                   | Maximum walking distance allowed on a single route.                                                             |
 | number_of_threads            | -                     | 0 - 10                                                           | 0                                      | Number of threads to use when running the Python process, doesn't apply to the OTP Java server.                 |
 | no_server                    | -                     | Boolean                                                          | False                                  | Turns off starting up a new OTP Java server, if this is already running.                                        |
+| crowfly_max_distance         | -                     | Integer                                                          | None                                   | Optional maximum distance which filters what OD pairs will have routing calculations done.                      |
+| ruc_lookup                   | path                  | File path                                                        | None                                   | Optional zone rural urban classification lookup, used for adjusting crowfly_max_distance for specific zones.    |
+| ^                            | id_column             | Text                                                             | 'zone_id'                              | Name of column containing zone IDs in `ruc_lookup`.                                                             |
+| ^                            | ruc_column            | Text                                                             | 'ruc'                                  | Name of column containing rural-urban classification codes in `ruc_lookup`.                                     |
+| irrelevant_destinations      | path                  | File path                                                        | None                                   | Optional CSV containing list of zones which will exclude any OD pairs if the zone is the destination.           |
+| ^                            | zone_column           | Text                                                             | 'zone_id'                              | Name of column containing zone IDs in `irrelevant_destinations`.                                                |
 
 ### Prepare
+
 This section discusses the prepare Python script, before this make sure the dependencies are
 installed (see [Preparation and Dependencies](#preparation-and-dependencies)) and the output folder
 with a config file has been created (see [Running OTP4GB-Py](#running-otp4gb-py)). This script
@@ -150,13 +159,23 @@ Once complete the output folder should contain a new sub-folder `graphs\filtered
 prepared files, ready to run the process script.
 
 ### Process
+
 Once the output folder has been prepared then running the full OTP generalised cost calculation
 process is simply running the process Python script.
 
 Running the process script uses the same config file and output folder as was used for prepare.
-There are no optional arguments just simply run the command with the output directory:
-```
-python process.py <directory>
+Run the process script by providing a path to the output directory, command usage shown below:
+
+```plaintext
+usage: process.py [-h] [-p] folder
+
+positional arguments:
+  folder                folder containing config file and inputs
+
+options:
+  -h, --help            show this help message and exit
+  -p, --save_parameters
+                        save build parameters to JSON lines files and exit (default: False)
 ```
 
 The main process performs the following calculations (outlined in the "OTP4GB-Py Routing" box in
@@ -255,6 +274,7 @@ inputs for this script are provided in a config file and outlined in table 3, (s
 [accessibility config](config/accessibility_config.yml) for an example).
 
 **Table 3:** *Details of the config file parameters for the accessibility script.*
+
 | Parameter                  | Type               | Default | Description                                                                                                      |
 | :------------------------- | :----------------- | :------ | :--------------------------------------------------------------------------------------------------------------- |
 | cost_metrics               | list of file paths | -       | List of cost metrics CSVs (from OTP4GB-Py process).                                                              |

@@ -23,9 +23,15 @@ from shapely import geometry
 ##### CONSTANTS #####
 LOG = logging.getLogger(__name__)
 ROUTER_API_ROUTE = "otp/routers/default/plan"
-REQUEST_TIMEOUT = 5
-REQUEST_RETRIES = 10
-OTP_ERRORS = {"NO_TRANSIT": 406, "TOO_CLOSE": 409}
+REQUEST_TIMEOUT = 200
+REQUEST_RETRIES = 5
+OTP_ERRORS = {
+    "NO_TRANSIT": 406,
+    "TOO_CLOSE": 409,
+    "TRIP_IMPOSSIBLE": 400,
+    "GEOCODE_TO_NOT_FOUND": 450,
+}
+
 
 
 ##### CLASSES #####
@@ -101,7 +107,7 @@ class RoutePlanParameters(pydantic.BaseModel):
             raise ValueError(f"point should have 2 coordinates not {len(value)}")
 
         raise TypeError(
-            f"expected collection or string of coordinates for point not '{value}'"
+            f"expected collection or string of coordinates for point not '{type(value)}'"
         )
 
     @pydantic.validator("date", pre=True)
@@ -251,7 +257,7 @@ def get_route_itineraries(
             if result.error is None:
                 return response.url, result
             if result.error.id in OTP_ERRORS.values():
-                end = True  # No point retrying OTP errors
+                return response.url, result
 
             add_error(
                 f"OTP Error {result.error.id}: {result.error.msg} {result.error.message}"

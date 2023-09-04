@@ -8,6 +8,8 @@ import time
 from typing import Callable, Iterator, Optional, TypeVar
 
 
+TEXT_ENCODING = "utf-8"
+
 T = TypeVar("T")
 A = TypeVar("A")
 
