@@ -1,35 +1,25 @@
 """Run OTP4GB-py and produce isochrones."""
 from __future__ import annotations
 
-import argparse
 import atexit
 import csv
 import datetime
 import glob
-import gzip
 import logging
 import math
-import multiprocessing
 import concurrent.futures
-import shutil
-import threading
 import os
+import zipfile 
 import pandas as pd
-import pathlib
-
-from pydantic import dataclasses
-import pydantic
 
 from otp4gb.centroids import load_centroids, ZoneCentroidColumns
 from otp4gb.config import ASSET_DIR, load_config
 from otp4gb.otp import Server
 from otp4gb.util import Timer, chunker
-from otp4gb import cost, parameters, batch
+from otp4gb import parameters 
 from otp4gb.batch import build_run_spec, setup_worker, build_run_spec, run_batch, run_batch_catch_errors  
 from contextlib import ExitStack
-import otp4gb.batch
 from otp4gb.logging import configure_app_logging
-import time
 from process import ProcessArgs, loadCentroids
 
 logger = logging.getLogger(__name__)
@@ -84,23 +74,22 @@ def main():
         # Assume time is in local timezone
         travel_datetime = travel_datetime.astimezone()
         logger.info(
-            "Given date / time is assumed to be in local timezone: %s",
-            travel_datetime.tzinfo,
+            "Starting run for datetime (%s) : local timezone (%s) has been assumed",
+            travel_datetime, travel_datetime.tzinfo,
         )
-        
+                
         jobs = build_run_spec(name_key=isochroneConfig.zone_column, 
                                     modes=config.modes, 
                                     centroids=centroids, 
                                     arrive_by=travel_datetime,
                                     travel_time_max=time_period.search_window_minutes, 
                                     travel_time_step=isochroneConfig.step_minutes,
-                                    max_walk_distance=config.max_walk_distance, 
                                     server=server,
                                     arrive=True)
 
         matrix_filename = os.path.join(
             arguments.folder,
-            f"AreatoAreaTravelTimeMatrix_ToArriveBy_{travel_datetime.strftime('%Y%m%d_%H%M')}.csv"
+            f"AreatoAreaTravelTimeMatrix_ToArriveBy_{travel_datetime.strftime('%Y%m%d_%H%M')}"
         )
         logger.info('Launching batch processor to process %d jobs', len(jobs))
 
@@ -116,12 +105,12 @@ def main():
                 'name_key': isochroneConfig.zone_column,
             },)
 
-        with open(matrix_filename, 'w') as file:
+        with open(matrix_filename + ".csv", 'w') as file:
             pass  # truncate the file and close it again
 
         with ExitStack() as stack:
             stack.enter_context(threadPool)
-            file = stack.enter_context(open(matrix_filename, 'a'))
+            file = stack.enter_context(open(matrix_filename + ".csv", 'a'))
             first = True
 
             numChunks = math.ceil(len(jobs) / (config.number_of_threads * 5))
@@ -152,35 +141,44 @@ def main():
                         matrix = matrix + flattened_list
 
                 # Write list to csv in batches
-                logger.info("Writing %d rows to %s", len(matrix), matrix_filename)
+                logger.info("Writing %d rows to %s", len(matrix), matrix_filename + ".csv")
                 pd.DataFrame.from_dict(matrix).to_csv(file, index=False, header=first, lineterminator='\n', quoting=csv.QUOTE_NONNUMERIC)
                 first=False
 
 
                 # compress the output files so it's easier to handle
                 added_files = []
-                geojson_file = f'runDate_{runDate}_modelDate_{travel_datetime.isoformat()}_batch{idx+1:03}.geoJson.gz'
+                geojson_file = f'runDate_{runDate}_modelDate_{travel_datetime.isoformat()}_batch{idx+1:03}.geoJson.zip'
                 geojson_file = geojson_file.replace(',', '_')
                 geojson_file = geojson_file.replace(':', '-')
                 geojson_file = geojson_file.replace(' ', '_')
 
-                with gzip.open(os.path.join(isochrones_dir, geojson_file), 'wb') as gz_file:
+                with zipfile.ZipFile(os.path.join(isochrones_dir, geojson_file), 'w', compression=zipfile.ZIP_DEFLATED ) as zip_file:
                     for file_path in glob.glob(f'{isochrones_dir}/*.geojson'):
-                        with open(file_path, 'rb') as input_file:
-                            shutil.copyfileobj(input_file, gz_file)
+                        zip_file.write(file_path, os.path.basename(file_path) )
                         added_files.append(file_path)
 
                 # Delete the successfully added files
                 for file_path in added_files:
                     os.remove(file_path)
-
                 
-            logger.info("all tasks complete, shutting down threadpool")
+            logger.info("all tasks complete for datetime (%s), shutting down threadpool", travel_datetime)
             threadPool.shutdown()
+
+        logger.info("compressing travel time matrix file (%s)", matrix_filename)
+        
+        with zipfile.ZipFile(matrix_filename + ".zip", 'w', compression=zipfile.ZIP_DEFLATED ) as zip_file:
+            zip_file.write(matrix_filename + ".csv", os.path.basename(matrix_filename + ".csv") )
+
+        # Delete the successfully added files
+        os.remove(matrix_filename + ".csv")
 
 
     # Stop OTP Server
     server.stop()
+    
+    logger.info("all tasks completed")
+
 
 
 if __name__ == "__main__":

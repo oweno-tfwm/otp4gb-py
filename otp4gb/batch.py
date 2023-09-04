@@ -1,8 +1,13 @@
+import datetime
 import logging
 import operator
 import os
+import geopandas as gpd
 import pandas as pd
 import threading
+
+from shapely import envelope
+
 
 from otp4gb.geo import (
     buffer_geometry,
@@ -11,7 +16,13 @@ from otp4gb.geo import (
     sort_by_descending_time,
 )
 from otp4gb.net import api_call
-from otp4gb.centroids import ZoneCentroids
+from otp4gb.centroids import ZoneCentroids, _CENTROIDS_CRS
+
+
+
+_TIME_BY_STRING : str = "By"
+_TIME_BETWEEN_STRING : str = "Between"
+
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +70,6 @@ def build_run_spec(
     arrive_by,
     travel_time_max,
     travel_time_step,
-    max_walk_distance,
     server,
     arrive,
 ):
@@ -105,65 +115,216 @@ def setup_worker(config):
     _name_key = config.get("name_key")
 
 
-def run_batch(batch_args: dict) -> list[dict]:
-    logger.debug("args = %s", batch_args)
-    url, name, mode, travel_time, destination, arrive = operator.itemgetter(
-        "url", "name", "mode", "travel_time", "destination", "arrive"
-    )(batch_args)
 
+# performance - .buffer is massively expensive on complex geometries (e.g. car accessibility isochrones) 
+# taking a comparable amount of time / cpu as the entire call to the OTP server. 
+# 
+# To put it in context if .to_crs takes 1 unit of time, .simplify takes 10 units of time, .make_valid takes 50 units of time
+# .buffer takes 100 units of time, the entire call to the OTP server takes 200 units of elapsed time.
+#
+# so we can put in a lot of logic/ exception handlers and still have much better performance if we avoid calls to .buffer, and call buffer after .simplify
+#
+def run_batch(batch_args: list[dict]) -> dict:
+    #if supplied with more than one request we union all the isochrones together grouped by the 'time' attribute in the responses.
+    #used when testing public transport accessibilty. Testing for just one time when service frequencies are low can give misleading
+    #results, so (dependent on config file setting) we test for multiple arrival times and create a union of the best accessibility.
+    
     threadId = threading.get_ident()
 
-    logger.info("T%d:Processing %s for %s", threadId, mode, name)
+    batchResponses = gpd.GeoDataFrame()
+    
+    travelTimes = set()
 
-    #   Calculate travel isochrone up to a number of cutoff times (1 to 90 mins)
-    logger.debug("T%d:Getting URL %s", threadId, url)
-    data = api_call(url)
+    for request_args in batch_args:
+        
+        logger.debug("args = %s", request_args)
+        url, name, mode, travel_time, destination, arrive = operator.itemgetter(
+            "url", "name", "mode", "travel_time", "destination", "arrive"
+        )(request_args)
 
-    data = parse_to_geo(data)
+        logger.info("T%d:Processing %s for %s at time %s", threadId, mode, name, travel_time)
+        
+        travelTimes.add(datetime.datetime.fromisoformat(travel_time))
 
-    if (_buffer_size > 0):
-        data = buffer_geometry(data, buffer_size=_buffer_size)
+        #   Calculate travel isochrone up to a number of cutoff times (1 to 90 mins)
+        logger.debug("T%d:Getting URL %s", threadId, url)
+        requestData = api_call(url)
 
-    data = sort_by_descending_time(data)
-    largest = data.loc[[0]]
+        requestData = parse_to_geo(requestData)
 
-    origins = _centroids.origins.clip(largest)
+        batchResponses = pd.concat([batchResponses, requestData])
+
+
+    # Remove rows with no geometry
+    batchResponses = batchResponses.dropna(subset=["geometry"])
+    # and remove a different kind of empty
+    batchResponses = batchResponses[~batchResponses.geometry.is_empty]
+    
+    if len(batchResponses) > 0:
+    
+        batchResponses.geometry = batchResponses.geometry.to_crs("EPSG:27700") #transform to GB national grid so that we can work in metre units.
+            # discuss if this is better worse or indifferent to EPSG:23030") which is what the original code used
+        try:
+            #boundingBox =  batchData.geometry.envelope
+            batchResponses = doGeometryProcessing( batchResponses, travelTimes )
+
+        except Exception as e:
+            logger.warn("T%d:Exception during geometry processing %s for %s (%s) - trying again...", threadId, mode, name, e)
+            
+            batchResponses.geometry = batchResponses.geometry.make_valid()
+            
+            # simplifying the geometry reduces some to being empty
+            batchResponses = batchResponses.dropna(subset=["geometry"])
+            batchResponses = batchResponses[~batchResponses.geometry.is_empty]
+            
+            if len(batchResponses) > 0:
+                batchResponses = doGeometryProcessing( batchResponses, travelTimes )
+            
+            logger.info("T%d:Geometry processing successful after make_valid() %s for %s", threadId, mode, name)
+            
+        
+        if len(batchResponses) > 0:
+            batchResponses.geometry = batchResponses.geometry.to_crs(_CENTROIDS_CRS) #transform back to lat/long.
+            
+            travel_time_matrix = saveIsochronesAndGenerateMatrix( batchResponses, travelTimes, destination, name, mode, arrive )
+        else:  
+            logger.warn("T%d: no valid geometry returned for %s for %s", threadId, mode, name)
+            travel_time_matrix = dict()        
+    else:  
+        logger.warn("T%d: no valid geometry returned for %s for %s", threadId, mode, name)
+        travel_time_matrix = dict()
+
+    logger.info("T%d:Completing %s for %s", threadId, mode, name)
+        
+    return travel_time_matrix
+
+
+
+def doGeometryProcessing( batchResponses: gpd.GeoDataFrame, travelTimes: set[datetime.datetime]
+                                  ) -> gpd.GeoDataFrame:
+    
+    #union all the isochrones for the same travel time together.
+    if len(travelTimes) > 1:
+        batchResponses = batchResponses.dissolve("time", as_index=False)
+        #if the geometry is invalid this will blow up with GEOSException: TopologyException: unable to assign free hole to a shell at.....   
+        #fail fast - fail early, will get called again after .make_valid has been called. 
+
+        # simplifying/ buffering the geometry reduces some to being empty
+        batchResponses = batchResponses.dropna(subset=["geometry"])
+        batchResponses = batchResponses[~batchResponses.geometry.is_empty]
+    
+    if len(batchResponses) > 0:
+        batchResponses = batchResponses.apply(processOneGeometry, axis=1)          
+        
+        # simplifying/ buffering the geometry reduces some to being empty
+        batchResponses = batchResponses.dropna(subset=["geometry"])
+        batchResponses = batchResponses[~batchResponses.geometry.is_empty]
+                
+    return batchResponses
+
+def processOneGeometry(row):
+    
+    if row.geometry and 0 != _buffer_size:
+        
+        boundsBox = row.geometry.envelope.bounds
+        width = boundsBox[2] - boundsBox[0]
+        height = boundsBox[3] - boundsBox[1]
+    
+        #don't buffer or simplify very small shapes
+        if width > 500 and height > 500:
+            
+            #half the buffer size for small shapes
+            bufferSizeToUse =  _buffer_size if width > 1000 and height > 1000 else _buffer_size/2            
+
+            if _buffer_size > 0:
+                row.geometry = row.geometry.simplify( tolerance=10, preserve_topology=False )
+
+                # resolution of 2 is an octogon shape
+                row.geometry = row.geometry.buffer(distance = bufferSizeToUse, resolution=2)
+            elif _buffer_size < 0:
+                row.geometry = row.geometry.simplify( tolerance= -bufferSizeToUse, preserve_topology=True )
+
+    return row
+
+
+
+def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame, 
+                                   travelTimes: set[datetime.datetime],
+                                  destination :str,
+                                  name :str,
+                                  mode :str,
+                                  arrive :bool
+                                  ) -> dict:
+    
+    threadId = threading.get_ident()
+
+    batchResponses = sort_by_descending_time(batchResponses) #bug: times were being treated as strings, so 900 came before 1800
+    largest = batchResponses.iloc[[0]] #bug: this was calling loc, not iloc, so the sorting had no effect.
+
+    #despite the buffer - the isochrone generated can have 'noise' in the form of islands of inaccessiblity - be cautious and clip to bounding box not isochrone itself
+    origins = _centroids.origins.clip(largest.envelope)
     origins = origins.assign(travel_time="")
 
+    if len(travelTimes) > 1:
+        travelTimeForFilename = min(travelTimes).isoformat() + "_and_" + max(travelTimes).isoformat()
+        byString = _TIME_BETWEEN_STRING
+    elif travelTimes:
+        travelTimeForFilename =  next(iter(travelTimes))
+        byString = _TIME_BY_STRING
+
     # Calculate all possible origins within travel time by minutes
-    for i in range(data.shape[0]):
-        row = data.iloc[[i]]
+    for i in range(batchResponses.shape[0]):
+        
+        row = batchResponses.iloc[[i]]
+        
         journey_time = int(row.time.iloc[0])
-        logger.debug("T%d:Journey time %s", threadId, journey_time)
-        geojson_file = _FILENAME_PATTERN.format(
+        
+        logger.debug("T%d:Journey time %i", threadId, journey_time)
+        
+        filename = _FILENAME_PATTERN.format(
             location_name=name,
             mode=mode,
             buffer_size=_buffer_size,
-            arrival_time=travel_time,
+            by_or_between = byString, 
+            arrival_time=travelTimeForFilename,
             journey_time=journey_time / 60,
             arrive_depart= "Arrive" if arrive else "Depart",
         ) 
-        geojson_file = geojson_file.replace(',', '_')
-        geojson_file = geojson_file.replace(':', '-')
-        geojson_file = geojson_file.replace(' ', '_')
+        filename = filename.replace(',', '_')
+        filename = filename.replace(':', '-')
+        filename = filename.replace(' ', '_')
 
         # Write isochrone
-        with open(os.path.join(_output_dir, geojson_file), "w") as f:
+        with open(os.path.join(_output_dir, filename), "w") as f:
             f.write(get_valid_json(row))
 
-        covered_indexes = origins.clip(row).index
+        #despite all the make_valid etc, we very occasionally get a TopologyException: side location conflict       
+        try:
+            covered_indexes = origins.clip(row).index
+        except Exception as e:
+            logger.warn("T%d: exception while clipping %s for %s (%s) trying again... ", threadId, mode, name, e )
+            batchResponses.at[row.index[0], 'geometry'] = row.geometry.make_valid().iloc[0]
+            row = batchResponses.iloc[[i]]
+            covered_indexes = origins.clip(row).index
+            
         logger.debug(
-            "T%d:Mode %s for %s covers %s centroids in %s seconds",
+            "T%d:Mode %s for %s covers %i centroids in %i seconds",
             threadId,
             mode,
             name,
             len(covered_indexes),
             int(row.time.iloc[0]),
         )
+        
         updated_times = pd.DataFrame(
             {"travel_time": journey_time}, index=covered_indexes
         )
+        
         origins.update(updated_times)
+
+
+    #since we clipped to bounding box we may have some inaccessible origins - remove them.
+    origins = origins[origins.travel_time != ""]
 
     travel_time_matrix = pd.DataFrame(
         {
@@ -185,25 +346,30 @@ def run_batch(batch_args: dict) -> list[dict]:
 
     logger.debug("T%d:Travel Matrix ==>\n%s", threadId, travel_time_matrix)
 
-    # Convert to native python list
+    # Convert to native python dict
     travel_time_matrix = travel_time_matrix.to_dict(orient="records")
-
-    logger.info("T%d:Completing %s for %s", threadId, mode, name)
 
     return travel_time_matrix
 
 
-def run_batch_catch_errors(batch_args: dict) -> list[dict]:
+
+def run_batch_catch_errors(batch_args: list[dict]) -> dict:
     """Wraps `run_batch` catches any exceptions and returns dict of arguments and error."""
     try:
         return run_batch(batch_args)
     except Exception as e:
-        # Get destination name instead of whole Series
-        args = batch_args.copy()
-        dest_name = args.pop("destination").loc[_name_key]
-        args["destination"] = dest_name
+        
+        #just return the first one if we have more than one job in the batch at this level
+        for job in batch_args:
+            args = job.copy()
+            
+            # Get destination name instead of whole Series
+            dest_name = args.pop("destination").loc[_name_key]
+            args["destination"] = dest_name
 
-        err_msg = f"{e.__class__.__name__}: {e}"
-        logger.error("T%d:Error in run_batch(%s) - %s", threading.get_ident(), args, err_msg)
-
-        return [{**args, "error": err_msg}]
+            err_msg = f"{e.__class__.__name__}: {e}"
+            logger.error("T%d:Error in run_batch(%s) - %s", threading.get_ident(), args, err_msg)
+            args["error"] = err_msg
+            return args
+            
+ 

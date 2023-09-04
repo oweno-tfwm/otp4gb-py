@@ -99,6 +99,7 @@ class IsochroneConfiguration:
     step_minutes: Optional[int] = 15
     buffer_metres: Optional[int] = 100
     zone_column: Optional[str] = "zone_id"
+    union_all_times: Optional[bool] = False
 
 
 ##### FUNCTIONS #####
