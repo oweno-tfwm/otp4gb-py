@@ -41,6 +41,7 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     """Class for managing (and parsing) the YAML config file."""
 
     date: datetime.date
+    end_date: Optional[datetime.date]
     extents: Bounds
     osm_file: str
     gtfs_files: list[str]
@@ -78,6 +79,14 @@ class ProcessConfig(caf.toolkit.BaseConfig):
 
         return value
 
+    @pydantic.validator('end_date', pre=True, always=True)
+    def _default_end_date(cls, value, values):
+        # pylint disable=no-self-argument
+        """Return 'date' parameter if None or string is empty"""
+        if value is None or len(value) == 0:
+            value = values.get('date')
+        return value
+
 def load_config(folder: pathlib.Path) -> ProcessConfig:
     """Read process config file."""
     file = pathlib.Path(folder) / "config.yml"
@@ -85,7 +94,7 @@ def load_config(folder: pathlib.Path) -> ProcessConfig:
 
 
 def write_build_config(
-    folder: pathlib.Path, date: datetime.date, encoding: str = util.TEXT_ENCODING
+    folder: pathlib.Path, startDate: datetime.date, endDate: datetime.date, encoding: str = util.TEXT_ENCODING
 ) -> None:
     """Load default build config values, update and write to graph folder.
 
@@ -109,8 +118,8 @@ def write_build_config(
     else:
         data = {}
 
-    data["transitServiceStart"] = (date - datetime.timedelta(1)).isoformat()
-    data["transitServiceEnd"] = (date + datetime.timedelta(1)).isoformat()
+    data["transitServiceStart"] = (startDate - datetime.timedelta(1)).isoformat()
+    data["transitServiceEnd"] = (endDate + datetime.timedelta(1)).isoformat()
 
     config_path = folder / filename
     with open(config_path, "wt", encoding=encoding) as file:

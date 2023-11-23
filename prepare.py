@@ -31,6 +31,7 @@ prepare.py [-F|--force] -b bounds -d date <path to config root>
 
   -b, --bounds\tBounds (as defined in bounds.py) for the filter
   -d, --date\tDate for routing graph preparation
+  -e, --enddate\tEnd date for routing graph preperation (defaults to same as 'date' argument)
   -F, --force\tForce recreation
     """
     print(usage_string)
@@ -41,7 +42,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
     
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "b:d:F", ["bounds=", "date=", "force"])
+        opts, args = getopt.getopt(sys.argv[1:], "b:d:e:F", ["bounds=", "date=", "enddate=", "force"])
     except getopt.GetoptError as err:
         logging.error(err)
         sys.exit(2)
@@ -66,8 +67,13 @@ def main():
 
     opt_force = False
     opt_date = config.date
+    opt_endDate = config.end_date    
     extents = config.extents
     # TODO(MB) Update this to use argparser module
+
+    dateOnCommandLine = False
+    endDateOnCommandLine = False
+
     for o, a in opts:
         if o == "-b" or o == "--bounds":
             try:
@@ -84,20 +90,35 @@ def main():
         if o == "-d" or o == "--date":
             try:
                 opt_date = date.fromisoformat(a)
+                dateOnCommandLine = True
             except:
                 logger.error("Invalid date %s", a)
                 opt_date = None
             continue
+        if o == "-e" or o == "--enddate":
+            try:
+                opt_endDate = date.fromisoformat(a)
+                endDateOnCommandLine = True
+            except:
+                logger.error("Invalid end date %s", a)
+                opt_endDate = None
+            continue
         assert False, "Unhandled option"
 
+    if (dateOnCommandLine and not endDateOnCommandLine):
+        opt_endDate = opt_date
+    
     filtered_graph_folder = os.path.join(opt_base_folder, "graphs", "filtered")
 
     if not opt_date:
         logger.error("No date provided")
         usage()
     logger.debug("opt_date is %s", opt_date)
+    
+    if not opt_endDate:
+         opt_endDate = opt_date
 
-    date_filter_string = "{}:{}".format(opt_date, opt_date + timedelta(days=1))
+    date_filter_string = "{}:{}".format(opt_date - timedelta(days=1), opt_endDate + timedelta(days=1))
     logger.debug("date_filter_string is %s", date_filter_string)
 
     if not extents:
@@ -136,7 +157,7 @@ def main():
             extents=extents,
         )
 
-        write_build_config(filtered_graph_folder, opt_date)
+        write_build_config(filtered_graph_folder, opt_date, opt_endDate)
         shutil.copy(os.path.join(CONF_DIR, "router-config.json"), filtered_graph_folder)
         shutil.copy(os.path.join(CONF_DIR, "otp-config.json"), filtered_graph_folder)
 

@@ -39,7 +39,7 @@ def gtfs_filter(
 ):
     logger.debug(timetable_file)
     temp_folder = "zip_tmp"
-    jar_file = os.path.join(BIN_DIR, "gtfs-filter-0.1.jar")
+    jar_file = os.path.join(BIN_DIR, "gtfs-filter-0.2.jar")
 
     name_base = os.path.splitext(os.path.basename(timetable_file))[0]
     logger.info("Processing GTFS file %s", name_base)

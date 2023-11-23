@@ -85,8 +85,8 @@ def build_run_spec(
             modeText = ",".join(mode)
             cutoffs = [
                 ("cutoff", str(c) + "M")
-                for c in range(travel_time_step, int(travel_time_max) + 1, travel_time_step)
-            ]
+                for c in range(travel_time_step, int(travel_time_max), travel_time_step)
+            ] + [("cutoff", str(travel_time_max) + "M")]
             query = [
                 ("location", ",".join([str(x) for x in location])),
                 ("modes", modeText),

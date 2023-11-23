@@ -47,6 +47,8 @@ class Server:
             "--load",
             "--port",
             self.port,
+            "--securePort",
+            str(int(self.port)+1)
         ]
         logger.info("Starting OTP server")
         logger.debug("About to run server with %s", command)
