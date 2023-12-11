@@ -113,9 +113,9 @@ def main():
             file = stack.enter_context(open(matrix_filename + ".csv", 'a'))
             first = True
 
-            numChunks = math.ceil(len(jobs) / (config.number_of_threads * 5))
+            numChunks = math.ceil(len(jobs) / (config.number_of_threads * 10))
 
-            for idx, batch in enumerate(chunker(jobs, config.number_of_threads*5)):
+            for idx, batch in enumerate(chunker(jobs, config.number_of_threads*10)):
                 logger.info(
                     "==================== Running batch %d of %d ====================", idx+1, numChunks)
                 logger.info("Dispatching %d jobs", len(batch))

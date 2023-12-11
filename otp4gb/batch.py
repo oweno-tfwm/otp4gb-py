@@ -4,6 +4,7 @@ import operator
 import os
 import geopandas as gpd
 import pandas as pd
+import re
 import threading
 
 from shapely import envelope
@@ -17,7 +18,7 @@ from otp4gb.geo import (
 )
 from otp4gb.net import api_call
 from otp4gb.centroids import ZoneCentroids, _CENTROIDS_CRS
-
+from otp4gb.geo import _PROCESSING_CRS
 
 
 _TIME_BY_STRING : str = "By"
@@ -107,12 +108,28 @@ def build_run_spec(
 
 
 def setup_worker(config):
-    global _output_dir, _centroids, _buffer_size, _FILENAME_PATTERN, _name_key
+    global _output_dir, _buffer_size, _FILENAME_PATTERN, _name_key, _centroids, _test_origin_areas, _centroids_origin_sindex
     _output_dir = config.get("output_dir")
-    _centroids = config.get("centroids")
     _buffer_size = config.get("buffer_size")
     _FILENAME_PATTERN = config.get("FILENAME_PATTERN")
     _name_key = config.get("name_key")
+    
+    _centroids = config.get("centroids")    
+    _test_origin_areas = 'polygon' in _centroids.origins.columns
+        
+    #reproject so that area calulations work OK
+    if _test_origin_areas:
+        _centroids.origins.set_geometry(col='polygon',drop=True,inplace=True)
+        _centroids.origins.to_crs(crs=_PROCESSING_CRS, inplace=True)
+        _centroids.origins['originArea'] = _centroids.origins.geometry.area
+    else:
+        _centroids.origins.to_crs(crs=_PROCESSING_CRS, inplace=True)
+        
+    _centroids_origin_sindex = _centroids.origins.sindex
+
+
+
+
 
 
 
@@ -125,6 +142,10 @@ def setup_worker(config):
 # so we can put in a lot of logic/ exception handlers and still have much better performance if we avoid calls to .buffer, and call buffer after .simplify
 #
 def run_batch(batch_args: list[dict]) -> dict:
+    return run_batchInternal( 1, batch_args )[1]
+    
+def run_batchInternal(stackDepth: int, batch_args: list[dict]) -> tuple[int, dict]:
+
     #if supplied with more than one request we union all the isochrones together grouped by the 'time' attribute in the responses.
     #used when testing public transport accessibilty. Testing for just one time when service frequencies are low can give misleading
     #results, so (dependent on config file setting) we test for multiple arrival times and create a union of the best accessibility.
@@ -142,7 +163,7 @@ def run_batch(batch_args: list[dict]) -> dict:
             "url", "name", "mode", "travel_time", "destination", "arrive"
         )(request_args)
 
-        logger.info("T%d:Processing %s for %s at time %s", threadId, mode, name, travel_time)
+        logger.info("T%d:Processing %s for destination %s at time %s", threadId, mode, name, travel_time)
         
         travelTimes.add(datetime.datetime.fromisoformat(travel_time))
 
@@ -160,16 +181,25 @@ def run_batch(batch_args: list[dict]) -> dict:
     # and remove a different kind of empty
     batchResponses = batchResponses[~batchResponses.geometry.is_empty]
     
-    if len(batchResponses) > 0:
-    
-        batchResponses.geometry = batchResponses.geometry.to_crs("EPSG:27700") #transform to GB national grid so that we can work in metre units.
+    if len(batchResponses) <= 0:
+        logger.warn("T%d: no valid geometry returned for %s for destination %s", threadId, mode, name)
+        
+        if stackDepth<=1:
+            #if we snap a location to the middle of a highway / major roundabout, and then ask OTP to route from there, it may decide it's
+            #and inaccessible location for pedestrians. If this happens we need to slightly adjust the location and try again.
+            logger.warn("T%d: adjusting location and trying again for %s for destination %s", threadId, mode, name)           
+            travel_time_matrix = run_batchAdjustLocationInternal( stackDepth, batch_args )
+        else:
+            travel_time_matrix = dict()
+    else:    
+        batchResponses.geometry = batchResponses.geometry.to_crs(_PROCESSING_CRS) #transform to GB national grid so that we can work in metre units.
             # discuss if this is better worse or indifferent to EPSG:23030") which is what the original code used
         try:
             #boundingBox =  batchData.geometry.envelope
             batchResponses = doGeometryProcessing( batchResponses, travelTimes )
 
         except Exception as e:
-            logger.warn("T%d:Exception during geometry processing %s for %s (%s) - trying again...", threadId, mode, name, e)
+            logger.warn("T%d:Exception during geometry processing %s for destination %s (%s) - trying again...", threadId, mode, name, e)
             
             batchResponses.geometry = batchResponses.geometry.make_valid()
             
@@ -180,23 +210,74 @@ def run_batch(batch_args: list[dict]) -> dict:
             if len(batchResponses) > 0:
                 batchResponses = doGeometryProcessing( batchResponses, travelTimes )
             
-            logger.info("T%d:Geometry processing successful after make_valid() %s for %s", threadId, mode, name)
+            logger.info("T%d:Geometry processing successful after make_valid() %s for destination %s", threadId, mode, name)
             
         
         if len(batchResponses) > 0:
-            batchResponses.geometry = batchResponses.geometry.to_crs(_CENTROIDS_CRS) #transform back to lat/long.
+            #batchResponses.geometry = batchResponses.geometry.to_crs(_CENTROIDS_CRS) #transform back to lat/long.
             
             travel_time_matrix = saveIsochronesAndGenerateMatrix( batchResponses, travelTimes, destination, name, mode, arrive )
         else:  
-            logger.warn("T%d: no valid geometry returned for %s for %s", threadId, mode, name)
+            logger.warn("T%d: no valid geometry returned for %s for destination %s", threadId, mode, name)
             travel_time_matrix = dict()        
-    else:  
-        logger.warn("T%d: no valid geometry returned for %s for %s", threadId, mode, name)
-        travel_time_matrix = dict()
-
-    logger.info("T%d:Completing %s for %s", threadId, mode, name)
+    
+    logger.info("T%d:Completing %s for destination %s", threadId, mode, name)
         
-    return travel_time_matrix
+    return len(batchResponses), travel_time_matrix
+
+
+
+_locationAdjustmentAmount: float = 0.0003
+
+_boxSearchPattern: list[tuple[int, int]] = [(0,1),(1,0),(0,-1),(-1,0),(1,1),(1,-1),(-1,-1),(-1,1)]
+
+def run_batchAdjustLocationInternal(stackDepth: int, batch_args: list[dict]) -> dict:
+
+    #http://laptop11266:8888/otp/traveltime/isochrone?location=52.40411109957709,-1.508189400000908&modes=WALK,TRANSIT&time=2023-11-20T08:45:00%2B00:00&arriveby=true&cutoff=45M&cutoff=90M
+
+    threadId = threading.get_ident()
+   
+    stackDepth = stackDepth + 1
+
+    for boxSize in range(1, 3):
+        
+        for search in _boxSearchPattern:
+
+            batch_argsCopy = list()
+
+            for request_args in batch_args:
+        
+                url = operator.itemgetter("url")(request_args)
+
+                match = re.search("location=(.*?),(.*?)&", url)
+
+                if match:
+                    lat = float(match.group(1))
+                    long = float(match.group(2))
+                else:
+                    logger.error("T%d: Pattern not found in url. (%s)", threadId, url)
+                    break
+            
+                long = long + ( _locationAdjustmentAmount * boxSize * search[0] )
+                lat = lat + ( _locationAdjustmentAmount * boxSize * search[1] )
+
+                updatedUrl = url.replace("=" + match.group(1) + ",", "=" + str(lat) + ",")
+                updatedUrl = updatedUrl.replace("," + match.group(2) + "&", "," + str(long) + "&")
+
+                request_argsCopy = request_args.copy()
+                request_argsCopy['url'] = updatedUrl
+            
+                batch_argsCopy.append( request_argsCopy )
+
+            numGeometryResults, travel_time_matrix = run_batchInternal( stackDepth, batch_argsCopy )
+        
+            if numGeometryResults > 0:
+                logger.info("T%d: created non-null geometry after adjusting location. depth(%i) direction(%i,%i)", threadId, boxSize, search[0], search[1] )
+                return travel_time_matrix
+
+    logger.info("T%d: failed to create non-null geometry after adjusting location.", threadId )
+
+    return dict()
 
 
 
@@ -261,8 +342,10 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
     batchResponses = sort_by_descending_time(batchResponses) #bug: times were being treated as strings, so 900 came before 1800
     largest = batchResponses.iloc[[0]] #bug: this was calling loc, not iloc, so the sorting had no effect.
 
-    #despite the buffer - the isochrone generated can have 'noise' in the form of islands of inaccessiblity - be cautious and clip to bounding box not isochrone itself
-    origins = _centroids.origins.clip(largest.envelope)
+    #despite the buffer - the isochrone generated can have 'noise' in the form of islands of inaccessibility - be cautious and clip to bounding box not isochrone itself
+    possible_matches_index = list(_centroids_origin_sindex.query(largest.envelope, predicate="intersects")[1])   
+    origins = _centroids.origins.iloc[possible_matches_index]
+    origins = origins[ origins.intersects( largest.envelope.unary_union ) ]
     origins = origins.assign(travel_time="")
 
     if len(travelTimes) > 1:
@@ -271,6 +354,8 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
     elif travelTimes:
         travelTimeForFilename =  next(iter(travelTimes))
         byString = _TIME_BY_STRING
+
+    travel_time_matrix = pd.DataFrame()
 
     # Calculate all possible origins within travel time by minutes
     for i in range(batchResponses.shape[0]):
@@ -300,49 +385,60 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
 
         #despite all the make_valid etc, we very occasionally get a TopologyException: side location conflict       
         try:
-            covered_indexes = origins.clip(row).index
+            uu = row.unary_union
+            covered = origins[ origins.intersects( uu.envelope ) ]
+            covered = covered.clip( uu )
+                
         except Exception as e:
             logger.warn("T%d: exception while clipping %s for %s (%s) trying again... ", threadId, mode, name, e )
             batchResponses.at[row.index[0], 'geometry'] = row.geometry.make_valid().iloc[0]
             row = batchResponses.iloc[[i]]
-            covered_indexes = origins.clip(row).index
+            
+            covered = origins.clip(row)
+            
             
         logger.debug(
             "T%d:Mode %s for %s covers %i centroids in %i seconds",
             threadId,
             mode,
             name,
-            len(covered_indexes),
+            len(covered),
             int(row.time.iloc[0]),
         )
         
-        updated_times = pd.DataFrame(
-            {"travel_time": journey_time}, index=covered_indexes
+        if _test_origin_areas:
+            travel_time_matrix = pd.concat([travel_time_matrix, pd.DataFrame({
+                    "OriginName": covered[_name_key],
+                    "DestinationName": name,
+                    "Mode": mode,
+                    "Minutes": journey_time / 60,
+                    "OriginCoverFraction": round( covered.geometry.area / covered['originArea'], 4 )
+                })],
+            ignore_index=True)
+            
+        else:
+            updated_times = pd.DataFrame( {"travel_time": journey_time}, index=covered.index )
+            origins.update(updated_times)
+
+
+    if not _test_origin_areas:
+        #since we clipped to bounding box we may have some inaccessible origins - remove them.
+        origins = origins[origins.travel_time != ""]
+
+        travel_time_matrix = pd.DataFrame(
+            {
+                "OriginName": origins[_name_key],
+                "DestinationName": name,
+                "Mode": mode,
+                "Minutes": origins.travel_time / 60
+            }
         )
-        
-        origins.update(updated_times)
 
-
-    #since we clipped to bounding box we may have some inaccessible origins - remove them.
-    origins = origins[origins.travel_time != ""]
-
-    travel_time_matrix = pd.DataFrame(
-        {
-            "OriginName": origins[_name_key],
-            "OriginLatitude": origins.geometry.y,
-            "OriginLongitude": origins.geometry.x,
-            "DestinationName": name,
-            "DestinationLatitude": destination.geometry.y,
-            "DestinationLongitide": destination.geometry.x,
-            "Mode": mode,
-            "Minutes": origins.travel_time / 60,
-        }
-    )
 
     # Drop duplicate source / destination
-    travel_time_matrix = travel_time_matrix[
-        ~(travel_time_matrix["OriginName"] == travel_time_matrix["DestinationName"])
-    ]
+#    travel_time_matrix = travel_time_matrix[
+#        ~(travel_time_matrix["OriginName"] == travel_time_matrix["DestinationName"])
+#    ]
 
     logger.debug("T%d:Travel Matrix ==>\n%s", threadId, travel_time_matrix)
 

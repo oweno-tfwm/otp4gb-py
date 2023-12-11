@@ -1,9 +1,11 @@
 """Module for loading the zone centroids file."""
 from __future__ import annotations
 
+import csv
 import dataclasses
 import logging
 import pathlib
+from re import I
 from typing import NamedTuple, Optional
 
 import geopandas as gpd
@@ -12,7 +14,7 @@ from shapely import geometry
 
 
 LOG = logging.getLogger(__name__)
-_CENTROIDS_CRS = "EPSG:4326"
+_CENTROIDS_CRS: str = "EPSG:4326"
 
 
 class Bounds(NamedTuple):
@@ -67,18 +69,34 @@ def _read_centroids(
     zone_columns: list[str],
     longitude_column: str,
     latitude_column: str,
+    polygon_column: str
 ) -> gpd.GeoDataFrame:
     """Read centroids CSV and convert to GeoDataFrame."""
-    data = pd.read_csv(path, usecols=zone_columns + [longitude_column, latitude_column])
+    
+    # Read the header of the CSV file
+    with open(path, 'r') as file:
+        csv_reader = csv.reader(file)
+        header = next(csv_reader) 
+        
+    if polygon_column in header:
+        
+        data = pd.read_csv(path, usecols=zone_columns + [longitude_column, latitude_column, polygon_column])
 
-    points = data.apply(
-        lambda x: geometry.Point([x[longitude_column], x[latitude_column]]), axis=1
-    )
-    data = gpd.GeoDataFrame(
-        data.loc[:, zone_columns],
-        geometry=points.values,
-        crs=_CENTROIDS_CRS,
-    )
+        points = data.apply(
+            lambda x: geometry.Point([x[longitude_column], x[latitude_column]]), axis=1)
+
+        data['polygon'] = gpd.GeoSeries.from_wkt( data[polygon_column], crs=_CENTROIDS_CRS ).make_valid()
+    
+        data = gpd.GeoDataFrame(
+            data.loc[:, zone_columns + ['polygon'] ], geometry=points.values, crs=_CENTROIDS_CRS )
+    else:
+        data = pd.read_csv(path, usecols=zone_columns + [longitude_column, latitude_column])
+        
+        points = data.apply(
+            lambda x: geometry.Point([x[longitude_column], x[latitude_column]]), axis=1)
+    
+        data = gpd.GeoDataFrame(
+            data.loc[:, zone_columns ], geometry=points.values, crs=_CENTROIDS_CRS )    
 
     return data
 
@@ -98,7 +116,7 @@ def _clip(
 
     return centroids.clip(clip_box)
 
-
+'''
 def _add_centroids_back(
     clipped: gpd.GeoDataFrame,
     original: gpd.GeoDataFrame,
@@ -132,7 +150,7 @@ def _add_centroids_back(
     additional_data = original.loc[original[id_column].isin(missing_ids)]
 
     return pd.concat([clipped, additional_data])
-
+'''
 
 def load_centroids(
     origins_path: pathlib.Path,
@@ -140,6 +158,7 @@ def load_centroids(
     zone_columns: Optional[ZoneCentroidColumns] = None,
     longitude_column: str = "longitude",
     latitude_column: str = "latitude",
+    polygon_column: str = "poly_wkt",
     extents: Optional[Bounds] = None,
 ) -> ZoneCentroids:
     """Load zone centroids CSV file.
@@ -158,6 +177,8 @@ def load_centroids(
         Name of the column containing the longtudes.
     latitude_column : str, default 'latitude'
         Name of the column containing the latitudes.
+    polygon_column : str, default 'poly_wkt'
+        Name of the column containing WKT (well-known-text) describing a polygon. (in lat,long EPSG:4326)
     extents: Bounds, optional
         Boundary box to filter centroids.
 
@@ -171,37 +192,43 @@ def load_centroids(
         zone_columns = ZoneCentroidColumns()
     columns = list(zone_columns)
 
-    origins = _read_centroids(origins_path, columns, longitude_column, latitude_column)
+    origins = _read_centroids(origins_path, columns, longitude_column, latitude_column, polygon_column)
     origins_clipped = _clip(origins, extents)
 
     if destinations_path is None:
         LOG.info("Loaded origin centroids only from: %s", origins_path.name)
         return ZoneCentroids(zone_columns, origins_clipped, None)
 
-    destinations = _read_centroids(
-        destinations_path, columns, longitude_column, latitude_column
-    )
+    destinations = _read_centroids(destinations_path, columns, longitude_column, latitude_column, polygon_column)
+    destinations_clipped = _clip(destinations, extents)
 
+    
+    '''
+    a whole load of logic to ensure the same number and ID codes for origin and destination 
+    - don't really understand why (at least for isochrone calculations), 
+    removed it all to allow for rectangular O/D matrix and different ID codes for origin and destination.
+    
     if len(origins) != len(destinations):
         raise ValueError(
             f"{len(origins)} origin centroids given but {len(destinations)} "
             "zones given, these should be the same."
         )
-
+        
     origin_ids = origins[zone_columns.id].sort_values()
     destination_ids = destinations[zone_columns.id].sort_values()
-
+    
     if not destination_ids.equals(origin_ids):
         difference = destination_ids != origin_ids
         raise ValueError(
             "Destination centroids does not contain the same zone IDs "
             f"as origin centroids, {difference.sum()} IDs are different."
         )
+    '''
 
-    destinations_clipped = _clip(destinations, extents)
+
+    '''
     origin_ids = origins_clipped[zone_columns.id].sort_values()
     destination_ids = destinations_clipped[zone_columns.id].sort_values()
-
     if not origin_ids.equals(destination_ids):
         origins_clipped = _add_centroids_back(
             origins_clipped, origins, destination_ids, zone_columns.id
@@ -209,7 +236,8 @@ def load_centroids(
         destinations_clipped = _add_centroids_back(
             destinations_clipped, destinations, origin_ids, zone_columns.id
         )
-
+    '''
+        
     LOG.info(
         "Loaded origin and destination centroids from: %s and %s",
         origins_path.name,

@@ -66,9 +66,7 @@ def loadCentroids(config :ProcessConfig) -> ZoneCentroids:
     # Check if config.destination_centroids has been supplied
     if config.destination_centroids is None:
         destination_centroids_path = None
-        logger.info("No destination centroids detected. Proceeding with %s",
-                    config.centroids,
-                    )
+        logger.info("No destination centroids detected. Proceeding with %s", config.centroids )
     else:
         destination_centroids_path = pathlib.Path(ASSET_DIR) / config.destination_centroids
 

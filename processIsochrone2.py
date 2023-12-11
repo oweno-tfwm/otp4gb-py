@@ -171,7 +171,6 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
 
 
     def _compressFiles(self, directory :str, inputPattern :str, outputFilename:str ):
-        
         # compress the output files so it's easier to handle
         outputFilename = IsochroneJobExecutor.cleanBadCharsFromFilename( outputFilename )
 
@@ -190,7 +189,7 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
             # Delete the successfully added files
             for file_path in added_files:
                 os.remove(file_path)
-
+                
 
     def _appendListToFile(self, filename: str, list :list ):
 
@@ -247,16 +246,15 @@ class _IsochroneJobExecutorGroupByDate(_IsochroneJobExecutorBase):
         
         self._csv_header_written = False
             
-        numChunks = math.ceil(len(jobs) / (self.config.number_of_threads * 5))
+        numChunks = math.ceil(len(jobs) / (self.config.number_of_threads * 10))
             
-        for idx, batch in enumerate(chunker(jobs, self.config.number_of_threads*5)):
+        for idx, batch in enumerate(chunker(jobs, self.config.number_of_threads*10)):
             logger.info(
                 "==================== Running batch %d of %d ====================", idx+1, numChunks)
             logger.info("Dispatching %d jobs", len(batch))
 
             jobsInList = [[job] for job in batch]
             taskFutures = [threadPool.submit(run_batch_catch_errors, job) for job in jobsInList] 
-
             matrix = list()
       
             for task in concurrent.futures.as_completed(taskFutures):
@@ -327,9 +325,9 @@ class _IsochroneJobExecutorGroupByLocation(_IsochroneJobExecutorBase):
         
         groupedJobs = [list(group) for _, group in itertools.groupby(jobs, key=self._jobGrouperFn)]
 
-        numChunks = math.ceil(len(groupedJobs) / (self.config.number_of_threads * 5))
+        numChunks = math.ceil(len(groupedJobs) / (self.config.number_of_threads * 10))
             
-        for idx, batch in enumerate(chunker(groupedJobs, self.config.number_of_threads*5)):
+        for idx, batch in enumerate(chunker(groupedJobs, self.config.number_of_threads*10)):
             logger.info(
                 "==================== Running batch %d of %d ====================", idx+1, numChunks)
             logger.info("Dispatching %d zones", len(batch))
@@ -372,7 +370,6 @@ class _IsochroneJobExecutorGroupByLocation(_IsochroneJobExecutorBase):
         
         taskFutures = [threadPool.submit(run_batch_catch_errors, list(job)) 
                         for _,job in itertools.groupby(flattened_list, key=self._jobGrouperInnerFn)] 
-
         matrix = list()
       
         for task in concurrent.futures.as_completed(taskFutures):
