@@ -1,4 +1,8 @@
 {
 	"platformEntriesLinking": true,
-	"osmWayPropertySet": "uk"
+	"osmWayPropertySet": "uk",
+	"osmDefaults" : {
+		"timeZone" : "Europe/London",
+		"osmTagMapping" : "uk"
+	  }
 }
