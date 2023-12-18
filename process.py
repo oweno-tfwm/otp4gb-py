@@ -78,7 +78,7 @@ def loadCentroids(config :ProcessConfig) -> ZoneCentroids:
         extents=config.extents,
     )
 
-    logger.info("Considering %d centroids", len(centroids.origins))
+    logger.info("Considering %d origin centroids", len(centroids.origins))
 
     return centroids
 
