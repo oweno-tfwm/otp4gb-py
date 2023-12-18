@@ -88,5 +88,5 @@ isochrone_configuration:
   step_minutes: 15
   buffer_metres: 100
   zone_column: zone_name #field name from centroids.csv that is used to build the output isochrone field names - if not unique then areas will over-write each other
-  union_all_times: #runs all arrival times together and unions all ischrones together
-
+  union_all_times: true #runs all arrival times together and unions all ischrones together
+  arrive_by: true #time specified is arrival time at destination

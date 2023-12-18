@@ -27,7 +27,7 @@ from otp4gb.config import ProcessConfig, load_config
 from otp4gb.otp import Server
 from otp4gb.util import Timer, chunker
 from otp4gb import parameters, routing 
-from otp4gb.batch import build_run_spec, setup_worker, build_run_spec, run_batch, run_batch_catch_errors  
+from otp4gb.batch import build_run_spec, setup_worker, run_batch, run_batch_catch_errors  
 from otp4gb.logging import configure_app_logging
 from process import ProcessArgs, loadCentroids
 from abc import ABC, abstractmethod
@@ -54,14 +54,14 @@ class IsochroneJobExecutor:
         if config.isochrone_configuration is None :
             config.isochrone_configuration = parameters.IsochroneConfiguration()
             
-        jobExector: IsochroneJobExecutor 
+        jobExecutor: IsochroneJobExecutor 
     
         if config.isochrone_configuration.union_all_times:
-            jobExector = _IsochroneJobExecutorGroupByLocation(outputDirectory, config)
+            jobExecutor = _IsochroneJobExecutorGroupByLocation(outputDirectory, config)
         else:
-            jobExector = _IsochroneJobExecutorGroupByDate(outputDirectory, config)
+            jobExecutor = _IsochroneJobExecutorGroupByDate(outputDirectory, config)
 
-        return jobExector
+        return jobExecutor
     
 
     def cleanBadCharsFromFilename( filename:str ) -> str:
@@ -94,7 +94,7 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
 
         centroids :ZoneCentroids = loadCentroids(self.config)
         
-        jobs :list() = self._buildJobList(server, centroids)
+        jobs :list() = self._buildJobList(server, centroids, self.config.isochrone_configuration.arrive_by)
 
         jobs.sort(key=self._jobSorterFn)
 
@@ -142,7 +142,7 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
                             jobList :list) -> int:   
         pass
 
-    def _buildJobList(self, server :Server, centroids :ZoneCentroids) -> list():
+    def _buildJobList(self, server :Server, centroids :ZoneCentroids, arrive :bool) -> list():
         
         jobs = list()
 
@@ -166,11 +166,12 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
                                         travel_time_max=time_period.search_window_minutes, 
                                         travel_time_step=self.config.isochrone_configuration.step_minutes,
                                         server=server,
-                                        arrive=True)         
+                                        arrive=arrive)         
         return jobs
 
 
     def _compressFiles(self, directory :str, inputPattern :str, outputFilename:str ):
+        
         # compress the output files so it's easier to handle
         outputFilename = IsochroneJobExecutor.cleanBadCharsFromFilename( outputFilename )
 
@@ -237,8 +238,10 @@ class _IsochroneJobExecutorGroupByDate(_IsochroneJobExecutorBase):
             
         logger.info( "Starting run for datetime (%s)", travel_datetime )
 
-        matrix_filename = f"AreatoAreaTravelTimeMatrix_ToArriveBy_{travel_datetime.strftime('%Y%m%d_%H%M')}"
-       
+
+        matrix_filename = f"AreatoAreaTravelTimeMatrix_ToArriveBy_{travel_datetime.strftime('%Y%m%d_%H%M')}" \
+            if self.config.isochrone_configuration.arrive_by else f"AreatoAreaTravelTimeMatrix_ToDepartAt_{travel_datetime.strftime('%Y%m%d_%H%M')}"
+    
         errorCount = 0
 
         with open(os.path.join( self.outputFolder, matrix_filename ) + ".csv", 'w') as file:
@@ -282,11 +285,8 @@ class _IsochroneJobExecutorGroupByDate(_IsochroneJobExecutorBase):
                             '*.geojson',
                             f'runDate_{runDate}_modelDate_{travel_datetime.isoformat()}_batch{idx+1:03}.geoJson.zip' )                
 
-        logger.info("compressing travel time matrix file (%s)", matrix_filename )        
-
-        self._compressFiles( self.outputFolder,
-                                    matrix_filename + ".csv",
-                                    matrix_filename + ".zip")
+        #logger.info("compressing travel time matrix file (%s)", matrix_filename )        
+        #self._compressFiles( self.outputFolder, matrix_filename + ".csv", matrix_filename + ".zip")
         self._csv_header_written = False
 
         return errorCount
@@ -316,7 +316,8 @@ class _IsochroneJobExecutorGroupByLocation(_IsochroneJobExecutorBase):
         
         runDate = datetime.date.today().isoformat()
 
-        matrix_filename = f"AreatoAreaTravelTimeMatrix_ToArriveBy_{self.config.date.strftime('%Y%m%d')}"
+        matrix_filename = f"AreatoAreaTravelTimeMatrix_ToArriveBy_{self.config.date.strftime('%Y%m%d')}" \
+            if self.config.isochrone_configuration.arrive_by else f"AreatoAreaTravelTimeMatrix_ToDepartAt_{self.config.date.strftime('%Y%m%d')}"
      
         with open(os.path.join( self.outputFolder, matrix_filename ) + ".csv", 'w') as file:
             pass  # truncate the file and close it again
@@ -346,11 +347,8 @@ class _IsochroneJobExecutorGroupByLocation(_IsochroneJobExecutorBase):
         #wait for CSV writes to complete
         threadPool.shutdown()
 
-        logger.info("compressing travel time matrix file (%s)", matrix_filename)        
-        
-        self._compressFiles( self.outputFolder,
-                                    matrix_filename + ".csv",
-                                    matrix_filename + ".zip")
+        #logger.info("compressing travel time matrix file (%s)", matrix_filename)             
+        #self._compressFiles( self.outputFolder, matrix_filename + ".csv", matrix_filename + ".zip")
         self._csv_header_written = False
 
         return errorCount

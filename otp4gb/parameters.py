@@ -100,6 +100,7 @@ class IsochroneConfiguration:
     buffer_metres: Optional[int] = 100
     zone_column: Optional[str] = "zone_id"
     union_all_times: Optional[bool] = False
+    arrive_by: Optional[bool] = True
 
 
 ##### FUNCTIONS #####
