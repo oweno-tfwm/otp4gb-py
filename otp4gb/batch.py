@@ -16,7 +16,7 @@ from otp4gb.geo import (
     parse_to_geo,
     sort_by_descending_time,
 )
-from otp4gb.net import api_call
+from otp4gb.net import api_call_retry
 from otp4gb.centroids import ZoneCentroids, _CENTROIDS_CRS
 from otp4gb.geo import _PROCESSING_CRS
 
@@ -169,7 +169,7 @@ def run_batchInternal(stackDepth: int, batch_args: list[dict]) -> tuple[int, dic
 
         #   Calculate travel isochrone up to a number of cutoff times (1 to 90 mins)
         logger.debug("T%d:Getting URL %s", threadId, url)
-        requestData = api_call(url)
+        requestData = api_call_retry( url, 3, 5 )
 
         requestData = parse_to_geo(requestData)
 
@@ -302,6 +302,9 @@ def doGeometryProcessing( batchResponses: gpd.GeoDataFrame, travelTimes: set[dat
         batchResponses = batchResponses[~batchResponses.geometry.is_empty]
                 
     return batchResponses
+
+
+
 
 def processOneGeometry(row):
     
