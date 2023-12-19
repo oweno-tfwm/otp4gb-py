@@ -169,7 +169,7 @@ def run_batchInternal(stackDepth: int, batch_args: list[dict]) -> tuple[int, dic
 
         #   Calculate travel isochrone up to a number of cutoff times (1 to 90 mins)
         logger.debug("T%d:Getting URL %s", threadId, url)
-        requestData = api_call_retry( url, 3, 5 )
+        requestData = api_call_retry( url, 3, 10 )
 
         requestData = parse_to_geo(requestData)
 
