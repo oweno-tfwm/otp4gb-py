@@ -1,8 +1,10 @@
 import geopandas as gpd
 import json
+import io
 from geojson_rewind import rewind
 from pandas import DataFrame
 from otp4gb.centroids import _CENTROIDS_CRS
+from shapely.geometry import shape, GeometryCollection, MultiPolygon
 
 
 _PROCESSING_CRS :str = "EPSG:27700"
@@ -32,7 +34,91 @@ def buffer_geometry(data :gpd.GeoDataFrame, buffer_size :int) -> gpd.GeoDataFram
 
 def sort_by_descending_time(data :dict) -> dict:
     data['time'] = data['time'].astype(int)
+    
     return data.sort_values(by="time", ascending=False)
+
+
+
+
+def _geometrycollection_to_multipolygon(geometry_collection):
+    polygons = [shape(geometry) for geometry in geometry_collection['geometries'] if geometry['type'] == 'Polygon']
+    multipolygon = MultiPolygon(polygons)
+    
+    return multipolygon.__geo_interface__
+      
+
+
+def _round_coordinates(coordinates, minNumCoords):
+    rounded_coords = []
+    prev_coord = None
+    for coord in coordinates:
+        rounded_coord = (round(coord[0], 7), round(coord[1], 7))
+        if prev_coord != rounded_coord:
+            rounded_coords.append(rounded_coord)
+            prev_coord = rounded_coord
+            
+    if len(rounded_coords) < minNumCoords:
+        return None
+    
+    return rounded_coords
+
+
+
+def _cleanCoordinates(data):
+
+    for feature in data['features']:
+        if 'geometry' in feature:
+            ftype = feature['geometry']['type']
+            if ftype == 'Polygon':
+                out = []
+                for idx, ring in enumerate(feature['geometry']['coordinates']):
+                    clean = _round_coordinates(ring,4)
+                    if not clean is None:
+                        out.append(clean)
+                        
+                if len(out)>0:
+                    feature['geometry']['coordinates'] = out
+                else:
+                    feature['geometry']['coordinates'] = None
+                
+            elif ftype == 'MultiPolygon':
+                for poly_idx, polygon in enumerate(feature['geometry']['coordinates']):
+                    out = []
+                    for ring_idx, ring in enumerate(polygon):
+                        clean = _round_coordinates(ring,4)
+                        if not clean is None:
+                            out.append(clean)
+                            
+                    if len(out)>0:
+                        feature['geometry']['coordinates'][poly_idx] = out
+                    else:
+                        feature['geometry']['coordinates'][poly_idx] = None
+
+            elif ftype == 'GeometryCollection':
+                for geo_idx, geo in enumerate(feature['geometry']['geometries']):
+                    if geo['type'] == 'Polygon':
+                        out = []                        
+                        for idx, ring in enumerate(geo['coordinates']):                               
+                            clean = _round_coordinates(ring,4)
+                            if not clean is None:
+                                out.append(clean)
+                        if len(out)>0:
+                            feature['geometry']['geometries'][geo_idx]['coordinates'] = out
+                        else:
+                            feature['geometry']['geometries'][geo_idx]['coordinates'] = None
+
+
+                    elif geo['type'] == 'LineString':
+                        feature['geometry']['geometries'][geo_idx]['coordinates'] = _round_coordinates( geo['coordinates'],2)                        
+                            
+                feature['geometry'] = _geometrycollection_to_multipolygon( feature['geometry'] )
+            
+            elif ftype == 'LineString':
+                feature['geometry']['coordinates'] = _round_coordinates( feature['geometry']['coordinates'],2)
+                
+    return data
+
+
 
 
 def get_valid_json(data :gpd.GeoDataFrame) -> str:
@@ -40,4 +126,18 @@ def get_valid_json(data :gpd.GeoDataFrame) -> str:
     if data.geometry.is_empty.all():
         return data.to_json( to_wgs84=True )
     else:
-        return rewind(data.to_json( to_wgs84=True ))
+        jsonStr = rewind(data.to_json( to_wgs84=True ))
+        data = json.loads( jsonStr )
+        data = _cleanCoordinates( data )
+        return json.dumps( data )
+
+
+def write_valid_json(data :gpd.GeoDataFrame, f:io.IOBase ):
+    #rewind throws if geometry is empty
+    if data.geometry.is_empty.all():
+        return f.write( data.to_json( to_wgs84=True ) )
+    else:
+        jsonStr = rewind(data.to_json( to_wgs84=True ))
+        data = json.loads( jsonStr )
+        data = _cleanCoordinates( data )
+        return json.dump( data, f )

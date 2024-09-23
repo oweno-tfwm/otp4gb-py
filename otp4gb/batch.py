@@ -14,6 +14,7 @@ from shapely import envelope
 from otp4gb.geo import (
     buffer_geometry,
     get_valid_json,
+    write_valid_json,
     parse_to_geo,
     sort_by_descending_time,
 )
@@ -136,6 +137,40 @@ def setup_worker(config):
 
 
 _isochroneVariables = ['buffer', 'mode', 'zone', 'arriveDepart', 'ByBetween', 'fromDateTime', 'toDateTime', 'travelTime']
+
+'''
+def _getValuesFromFilename( filename: str) -> dict:
+        
+    regex_pattern = r"buffered(\d+).*isochroneby_(.+)_tozone_(.+)_to(.+?)_(.+?)_(.+?)(_and_(.+))?_within.*?(\d+).*mins"
+        
+    match = re.match(regex_pattern, filename, re.IGNORECASE)
+    if match:
+        groups = match.groups()
+        # Define keys for the dictionary
+        keys = ['buffer', 'mode', 'zone', 'arriveDepart', 'ByBetween', 'fromDateTime', 'optional', 'toDateTime', 'travelTime']
+        # Construct dictionary with keys and extracted values
+        extracted_values = dict(zip(keys, groups))
+        del extracted_values['optional']
+        return extracted_values
+    else:
+        return None  
+
+
+def _add_attributes_to_geojson(geojson_data, dict):
+    # Modify the GeoJSON data here to add attributes
+    for feature in geojson_data['features']:
+        for attribute, value in dict.items():
+            feature['properties'][attribute] = value
+    return geojson_data
+'''
+
+def _mkdir( path ):
+    # Create the directory if it doesn't exist
+    directory = os.path.dirname( path )
+    if not os.path.exists( directory ):
+        os.makedirs( directory, exist_ok=True )        
+
+
 
 # performance - .buffer is massively expensive on complex geometries (e.g. car accessibility isochrones) 
 # taking a comparable amount of time / cpu as the entire call to the OTP server. 
@@ -408,7 +443,7 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
 
         # Write isochrone
         with open(os.path.join(_output_dir, filename), "w") as f:
-            f.write(get_valid_json(row))
+            write_valid_json(row,f)
 
         if len(_centroids.origins) > 0 :
             #despite all the make_valid etc, we very occasionally get a TopologyException: side location conflict       
