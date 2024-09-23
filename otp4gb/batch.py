@@ -6,6 +6,7 @@ import geopandas as gpd
 import pandas as pd
 import re
 import threading
+import uuid
 
 from shapely import envelope
 
@@ -69,6 +70,7 @@ def build_run_spec(
     modes,
     centroids : ZoneCentroids,
     arrive_by,
+    travel_time_min,
     travel_time_max,
     travel_time_step,
     server,
@@ -79,6 +81,9 @@ def build_run_spec(
     if locations is None:
         locations = centroids.origins
 
+    if travel_time_min is None:
+        travel_time_min = travel_time_step
+
     for _, destination in locations.iterrows():
         name = destination[name_key]
         location = [destination.geometry.y, destination.geometry.x]
@@ -86,7 +91,7 @@ def build_run_spec(
             modeText = ",".join(mode)
             cutoffs = [
                 ("cutoff", str(c) + "M")
-                for c in range(travel_time_step, int(travel_time_max), travel_time_step)
+                for c in range(int(travel_time_min), int(travel_time_max), travel_time_step)
             ] + [("cutoff", str(travel_time_max) + "M")]
             query = [
                 ("location", ",".join([str(x) for x in location])),
@@ -130,8 +135,7 @@ def setup_worker(config):
 
 
 
-
-
+_isochroneVariables = ['buffer', 'mode', 'zone', 'arriveDepart', 'ByBetween', 'fromDateTime', 'toDateTime', 'travelTime']
 
 # performance - .buffer is massively expensive on complex geometries (e.g. car accessibility isochrones) 
 # taking a comparable amount of time / cpu as the entire call to the OTP server. 
@@ -175,6 +179,8 @@ def run_batchInternal(stackDepth: int, batch_args: list[dict]) -> tuple[int, dic
 
         batchResponses = pd.concat([batchResponses, requestData])
 
+    for var in _isochroneVariables:
+        batchResponses[var] = None
 
     # Remove rows with no geometry
     batchResponses = batchResponses.dropna(subset=["geometry"])
@@ -345,18 +351,23 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
     batchResponses = sort_by_descending_time(batchResponses) #bug: times were being treated as strings, so 900 came before 1800
     largest = batchResponses.iloc[[0]] #bug: this was calling loc, not iloc, so the sorting had no effect.
 
-    #despite the buffer - the isochrone generated can have 'noise' in the form of islands of inaccessibility - be cautious and clip to bounding box not isochrone itself
-    possible_matches_index = list(_centroids_origin_sindex.query(largest.envelope, predicate="intersects")[1])   
-    origins = _centroids.origins.iloc[possible_matches_index]
-    origins = origins[ origins.intersects( largest.envelope.unary_union ) ]
-    origins = origins.assign(travel_time="")
+    if len(_centroids.origins) > 0 :
+        #despite the buffer - the isochrone generated can have 'noise' in the form of islands of inaccessibility - be cautious and clip to bounding box not isochrone itself
+        possible_matches_index = list(_centroids_origin_sindex.query(largest.envelope, predicate="intersects")[1])   
+        origins = _centroids.origins.iloc[possible_matches_index]
+        origins = origins[ origins.intersects( largest.envelope.unary_union ) ]
+        origins = origins.assign(travel_time="")
 
     if len(travelTimes) > 1:
-        travelTimeForFilename = min(travelTimes).isoformat() + "_and_" + max(travelTimes).isoformat()
+        #travelTimeForFilename = min(travelTimes).isoformat() + "_and_" + max(travelTimes).isoformat()
         byString = _TIME_BETWEEN_STRING
+        fromDateTime = min(travelTimes).isoformat()
+        toDateTime = max(travelTimes).isoformat()
     elif travelTimes:
-        travelTimeForFilename =  next(iter(travelTimes))
+        #travelTimeForFilename =  next(iter(travelTimes))
         byString = _TIME_BY_STRING
+        fromDateTime = next(iter(travelTimes)).isoformat()
+        toDateTime = None
 
     travel_time_matrix = pd.DataFrame()
 
@@ -369,6 +380,7 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
         
         logger.debug("T%d:Journey time %i", threadId, journey_time)
         
+        '''
         filename = _FILENAME_PATTERN.format(
             location_name=name,
             mode=mode,
@@ -381,50 +393,63 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
         filename = filename.replace(',', '_')
         filename = filename.replace(':', '-')
         filename = filename.replace(' ', '_')
+        '''
+
+        row['buffer']=_buffer_size
+        row['mode']=mode
+        row['zone']=name
+        row['arriveDepart']="Arrive" if arrive else "Depart"
+        row['ByBetween']=byString
+        row['fromDateTime']=fromDateTime
+        row['toDateTime']=toDateTime
+        row['travelTime']=journey_time / 60
+
+        filename = str(uuid.uuid4()).replace('-', '') + '-' + mode + '-' + str(int(journey_time / 60)) + '.geojson'                            
 
         # Write isochrone
         with open(os.path.join(_output_dir, filename), "w") as f:
             f.write(get_valid_json(row))
 
-        #despite all the make_valid etc, we very occasionally get a TopologyException: side location conflict       
-        try:
-            uu = row.unary_union
-            covered = origins[ origins.intersects( uu.envelope ) ]
-            covered = covered.clip( uu )
+        if len(_centroids.origins) > 0 :
+            #despite all the make_valid etc, we very occasionally get a TopologyException: side location conflict       
+            try:
+                uu = row.unary_union
+                covered = origins[ origins.intersects( uu.envelope ) ]
+                covered = covered.clip( uu )
                 
-        except Exception as e:
-            logger.warn("T%d: exception while clipping %s for %s (%s) trying again... ", threadId, mode, name, e )
-            batchResponses.at[row.index[0], 'geometry'] = row.geometry.make_valid().iloc[0]
-            row = batchResponses.iloc[[i]]
+            except Exception as e:
+                logger.warn("T%d: exception while clipping %s for %s (%s) trying again... ", threadId, mode, name, e )
+                batchResponses.at[row.index[0], 'geometry'] = row.geometry.make_valid().iloc[0]
+                row = batchResponses.iloc[[i]]
             
-            covered = origins.clip(row)
+                covered = origins.clip(row)
             
             
-        logger.debug(
-            "T%d:Mode %s for %s covers %i centroids in %i seconds",
-            threadId,
-            mode,
-            name,
-            len(covered),
-            int(row.time.iloc[0]),
-        )
+            logger.debug(
+                "T%d:Mode %s for %s covers %i centroids in %i seconds",
+                threadId,
+                mode,
+                name,
+                len(covered),
+                int(row.time.iloc[0]),
+            )
         
-        if _test_origin_areas:
-            travel_time_matrix = pd.concat([travel_time_matrix, pd.DataFrame({
-                    "OriginName": covered[_name_key],
-                    "DestinationName": name,
-                    "Mode": mode,
-                    "Minutes": journey_time / 60,
-                    "OriginCoverFraction": round( covered.geometry.area / covered['originArea'], 4 )
-                })],
-            ignore_index=True)
+            if _test_origin_areas:
+                travel_time_matrix = pd.concat([travel_time_matrix, pd.DataFrame({
+                        "OriginName": covered[_name_key],
+                        "DestinationName": name,
+                        "Mode": mode,
+                        "Minutes": journey_time / 60,
+                        "OriginCoverFraction": round( covered.geometry.area / covered['originArea'], 4 )
+                    })],
+                ignore_index=True)
             
-        else:
-            updated_times = pd.DataFrame( {"travel_time": journey_time}, index=covered.index )
-            origins.update(updated_times)
+            else:
+                updated_times = pd.DataFrame( {"travel_time": journey_time}, index=covered.index )
+                origins.update(updated_times)
 
 
-    if not _test_origin_areas:
+    if not _test_origin_areas and len(_centroids.origins) > 0 :
         #since we clipped to bounding box we may have some inaccessible origins - remove them.
         origins = origins[origins.travel_time != ""]
 
