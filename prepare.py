@@ -153,7 +153,7 @@ def main():
         # If you are not using Windows a version of osmconvert on your platform may be available via https://wiki.openstreetmap.org/wiki/Osmconvert
         osm_convert(
             os.path.join(ASSET_DIR, config.osm_file),
-            os.path.join(filtered_graph_folder, "gbfiltered.pbf"),
+            os.path.join(filtered_graph_folder, "gbfiltered.osm.pbf"),
             extents=extents,
         )
 
