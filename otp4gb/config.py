@@ -35,6 +35,7 @@ class TimePeriod(pydantic.BaseModel):  # pylint: disable=no-member
     name: str
     travel_time: datetime.time
     search_window_minutes: Optional[int] = None
+    search_window_minutes_min: Optional[int] = None
 
 
 class ProcessConfig(caf.toolkit.BaseConfig):
