@@ -82,6 +82,7 @@ def main():
                                     modes=config.modes, 
                                     centroids=centroids, 
                                     arrive_by=travel_datetime,
+                                    travel_time_min=time_period.search_window_minutes_min, 
                                     travel_time_max=time_period.search_window_minutes, 
                                     travel_time_step=isochroneConfig.step_minutes,
                                     server=server,

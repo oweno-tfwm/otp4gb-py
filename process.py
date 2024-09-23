@@ -111,6 +111,10 @@ def main():
         if time_period.search_window_minutes is not None:
             search_window_seconds = time_period.search_window_minutes * 60
 
+        search_window_seconds_min = None
+        if time_period.search_window_minutes_min is not None:
+            search_window_seconds_min = time_period.search_window_minutes_min * 60
+
         travel_datetime = datetime.datetime.combine(
             config.date, time_period.travel_time
         )
@@ -129,6 +133,7 @@ def main():
                 datetime=travel_datetime,
                 arrive_by=True,
                 search_window_seconds=search_window_seconds,
+                search_window_seconds_min=search_window_seconds_min,
                 max_walk_distance=config.max_walk_distance,
                 crowfly_max_distance=config.crowfly_max_distance,
             )

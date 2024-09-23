@@ -163,6 +163,7 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
                                         modes=self.config.modes, 
                                         centroids=centroids, 
                                         arrive_by=travel_datetime,
+                                        travel_time_min=time_period.search_window_minutes_min, 
                                         travel_time_max=time_period.search_window_minutes, 
                                         travel_time_step=self.config.isochrone_configuration.step_minutes,
                                         server=server,
@@ -419,9 +420,9 @@ def main():
         logger.info("Starting server")
         server.start()
   
-    jobExector = IsochroneJobExecutor.factory( arguments.folder, config ) 
+    jobExecutor = IsochroneJobExecutor.factory( arguments.folder, config ) 
 
-    errorCount = jobExector.run(server)    
+    errorCount = jobExecutor.run(server)    
 
     # Stop OTP Server
     server.stop()    
