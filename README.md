@@ -110,7 +110,8 @@ in table 1.
 | gtfs_files                   | -                     | List of file names                                               | N/A                                    | List of all the GTFS zip files, should be in the "assets" folder.                                               |
 | time_periods                 | name                  | Text                                                             | N/A                                    | List of time periods with sub-parameter name used for naming the output folder.                                 |
 | ^                            | travel_time           | Time (HH:MM)                                                     | N/A                                    | Time routes must arrive at the destination by.                                                                  |
-| ^                            | search_window_minutes | Integer                                                          | Calculated based on route availability | Number of minutes before `travel_time` when routes can arrive.                                                  |
+| ^                            | search_window_minutes | Integer                                                          | Calculated based on route availability | Maximum travel duration.                                                                                        |
+| ^                            | search_window_minutes_min | Integer                                                      | Calculated based on route availability | **Optional** Minimum travel duration. Default = IsochroneConfiguration.step_minutes value                       |
 | modes                        | -                     | List of lists of modes (TRANSIT, BUS, RAIL, TRAM, WALK, BICYCLE) | N/A                                    | List of the multiple modes to be considered for routing, each item is list of modes for a single matrix output. |
 | centroids                    | -                     | File name                                                        | N/A                                    | Name of the zone centroids file, should be found in the "assets" folder.                                        |
 | destination_centroids        | -                     | File name                                                        | N/A                                    | **Optional** name of the centroids file for the zone destinations (if they differ).                             |
@@ -298,3 +299,37 @@ and contains all the columns provided in the land use input data.
 [^2]: Running this command should be done from within the "Anaconda Prompt" after moving to the
   OTP4GB-Py directory and activating the "otp4gb-py" environment, see [Python](#python) section
   for more details.
+
+
+## Accessibility Isochrone Processing
+The [processIsochrone](processIsochrone2.py) script utilises the same basic process, but performs an accessibility analysis generating travel time isochrones, and optionally generates a travel time matrix.
+
+For every location in 'destination_centroids' a series of travel time isochrones is generated, at an adjustable level of time granularity.
+
+The generated isochrones are saved as geoJson files, which are zipped up in batches to reduce number of files and storage requirements. The parameters used to generate the isochrone are stored as properties within the geoJson file.
+
+If there are any locations within 'centroids' file, then these locations are tested to determine which travel time band they fall within to create a travel time matrix.
+
+If the 'centroids' file contains a 'poly_wkt' column, the centroid is treated as an area (with the geometry described in well-known-text format) rather than a simple point. The fraction of the centroid area that falls within the isochrone is calculated and output as the 'OriginCoverFraction' in the resulting matrix. 
+
+If the 'destination_centroids' file does not exist then the 'centroids' locations are also used as the journey destinations.
+
+
+This uses a number of additional configuration options (within the same config file), and interprets some config values in a different way.
+
+| Parameter                    | Sub-Parameter         | Type                             | Default              | Description                                                                                                               |
+| :--------------------------- | :-------------------- | :------------------------------- | :------------------- | :------------------------------------------------------------------------------------------------------------------------ |
+| step_minutes                 | -                     | integer (minutes)                | 15                   | **Optional** A series of isochrones is generated up to the maximum travel time, this specifies the interval between bands.|
+| buffer_metres                | -                     | integer (metres)                 | 100                  | **Optional** To fix invalid geometries the isochrone can be buffered. Size of buffer to apply. Expensive function to call.|
+| zone_column                  | -                     | string                           | "zone_id"            | **Optional** Column which specifies the zone name / number. Must be unique or values may be over-written.                 |
+| union_all_times              | -                     | boolean                          | False                | **Optional** Where multiple arrival times are specified - do we union all the generated isochrones together               |
+| arrive_by                    | -                     | boolean                          | True                 | **Optional** If the isochrone requested has the time specified as 'arrive by'(True) or 'depart by'(False)                 |
+
+
+'union_all_times' is provided to allow softening of the effect of the frequency of public transport services. A series of arrival times can be specified, with the isochrone created being the union of all the accessible areas to illustrate the maximum accessible area. This assumes that passengers can to a degree flex their arrival time and / or passenger perception is not completely reliant on a hard arrival time, but the duration of their journey from door-to-door.
+
+If the 'buffer_metres' value is non-zero then the geometry is first simplified, then buffered. If a negative 'buffer_metres' value is specified, the geometry is just simplified using a 'tolerance' value of the number supplied.
+
+A series of travel time isochrones are generated, from 'search_window_minutes_min' up to 'search_window_minutes', at intervals of 'step_minutes'.
+
+If 'search_window_minutes_min' is not specified then the value of 'step_minutes' is used as the minimum travel time.
