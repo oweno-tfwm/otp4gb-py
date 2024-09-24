@@ -440,11 +440,13 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
         row['toDateTime']=toDateTime
         row['travelTime']=journey_time / 60
 
-        filename = str(uuid.uuid4()).replace('-', '') + '-' + mode + '-' + str(int(journey_time / 60)) + '.geojson'                            
+        modename_safe_for_filename = mode.replace(",","_")
+
+        filename = str(uuid.uuid4()).replace('-', '') + '-' + modename_safe_for_filename + '-' + str(int(journey_time / 60)) + '.geojson'                            
 
         # Write isochrone
         if (_fanout_directory):
-            directory = os.path.join(_output_dir, "mode="+mode, "travelTime="+str(int(row['travelTime'])) )
+            directory = os.path.join(_output_dir, "mode="+modename_safe_for_filename, "travelTime="+str(int(row['travelTime'])) )
         else:
             directory = _output_dir
 
