@@ -101,6 +101,8 @@ class IsochroneConfiguration:
     zone_column: Optional[str] = "zone_id"
     union_all_times: Optional[bool] = False
     arrive_by: Optional[bool] = True
+    compress_output_files: Optional[bool] = True
+    fanout_directory: Optional[bool] = False
 
 
 ##### FUNCTIONS #####

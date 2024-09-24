@@ -90,3 +90,5 @@ isochrone_configuration:
   zone_column: zone_name #field name from centroids.csv that is used to build the output isochrone field names - if not unique then areas will over-write each other
   union_all_times: true #runs all arrival times together and unions all ischrones together
   arrive_by: true #time specified is arrival time at destination
+  compress_output_files: true #controls if output files are zipped up (in batches)
+  fanout_directory: false #fans out isochrone files into multiple directories fanout_directory=true is not compatible with compress_output_files=true

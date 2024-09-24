@@ -18,6 +18,7 @@ import math
 import concurrent.futures
 import os
 import threading
+import bz2
 import zipfile 
 import pandas as pd
 import itertools 
@@ -71,6 +72,13 @@ class IsochroneJobExecutor:
         return filename
 
 
+    def _mkdir( path ):
+        # Create the directory if it doesn't exist
+        directory = os.path.dirname( path )
+        if not os.path.exists( directory ):
+            os.makedirs( directory, exist_ok=True )  
+
+
 
 class _IsochroneJobExecutorBase(IsochroneJobExecutor):
 
@@ -93,15 +101,15 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
         self._csv_header_written = False
 
         centroids :ZoneCentroids = loadCentroids(self.config)
-        
-        jobs :list() = self._buildJobList(server, centroids, self.config.isochrone_configuration.arrive_by)
-
-        jobs.sort(key=self._jobSorterFn)
 
         # Create output directory
         isochrones_dir = os.path.join(self.outputFolder, 'isochrones')
         if not os.path.exists(isochrones_dir):
             os.makedirs(isochrones_dir)
+        
+        jobs :list() = self._buildJobList(server, centroids, self.config.isochrone_configuration.arrive_by, isochrones_dir)
+
+        jobs.sort(key=self._jobSorterFn)
 
         #could probably remove this now moved from executing in seperate processes to threads instead
         setup_worker({
@@ -110,6 +118,7 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
                 'buffer_size': self.config.isochrone_configuration.buffer_metres,
                 'FILENAME_PATTERN': _FILENAME_PATTERN,
                 'name_key': self.config.isochrone_configuration.zone_column,
+                'fanout_directory': self.config.isochrone_configuration.fanout_directory, 
             },)
 
         with concurrent.futures.ThreadPoolExecutor( max_workers=self.config.number_of_threads ) as threadPool:
@@ -142,11 +151,21 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
                             jobList :list) -> int:   
         pass
 
-    def _buildJobList(self, server :Server, centroids :ZoneCentroids, arrive :bool) -> list():
+    def _buildJobList(self, server :Server, centroids :ZoneCentroids, arrive :bool, outputDir :str) -> list():
         
         jobs = list()
+        travelTimes = set()
 
         for time_period in self.config.time_periods:
+
+            travel_time_min = time_period.search_window_minutes_min 
+            if travel_time_min is None:
+                travel_time_min = self.config.isochrone_configuration.step_minutes
+
+            times = list(range(int(travel_time_min), int(time_period.search_window_minutes), self.config.isochrone_configuration.step_minutes))
+            times.append( int(time_period.search_window_minutes) )
+            for t in times:
+                travelTimes.add( t )
 
             travel_datetime = datetime.datetime.combine(
                 self.config.date, time_period.travel_time
@@ -167,7 +186,17 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
                                         travel_time_max=time_period.search_window_minutes, 
                                         travel_time_step=self.config.isochrone_configuration.step_minutes,
                                         server=server,
-                                        arrive=arrive)         
+                                        arrive=arrive)
+           
+        #create fanout directories.
+        if self.config.isochrone_configuration.fanout_directory:
+            
+            for mode in self.config.modes:
+                modeText = "mode=" + "_".join(mode)
+
+                for t in travelTimes:
+                    IsochroneJobExecutor._mkdir( os.path.join( outputDir, modeText, "travelTime="+str(t), "" ) )
+
         return jobs
 
 
@@ -183,7 +212,7 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
 
         with self._compressing_lock:
         
-            with zipfile.ZipFile(os.path.join(directory, outputFilename), 'w', compression=zipfile.ZIP_DEFLATED ) as zip_file:
+            with zipfile.ZipFile(os.path.join(directory, outputFilename), 'w', compression=zipfile.ZIP_BZIP2 ) as zip_file:
                 for file_path in glob.glob(os.path.join(directory, inputPattern)):
                     zip_file.write(file_path, os.path.basename(file_path) )
                     added_files.append(file_path)
@@ -281,13 +310,16 @@ class _IsochroneJobExecutorGroupByDate(_IsochroneJobExecutorBase):
 
             self._appendListToFile(os.path.join( self.outputFolder, matrix_filename ) + ".csv", matrix )
         
-            threadPool.submit( self._compressFiles, 
+            if self.config.isochrone_configuration.compress_output_files:
+                threadPool.submit( self._compressFiles, 
                             isochrones_dir, 
                             '*.geojson',
                             f'runDate_{runDate}_modelDate_{travel_datetime.isoformat()}_batch{idx+1:03}.geoJson.zip' )                
 
-        #logger.info("compressing travel time matrix file (%s)", matrix_filename )        
-        #self._compressFiles( self.outputFolder, matrix_filename + ".csv", matrix_filename + ".zip")
+        if self.config.isochrone_configuration.compress_output_files:
+            logger.info("compressing travel time matrix file (%s)", matrix_filename )        
+            self._compressFiles( self.outputFolder, matrix_filename + ".csv", matrix_filename + ".zip")
+        
         self._csv_header_written = False
 
         return errorCount
@@ -340,7 +372,8 @@ class _IsochroneJobExecutorGroupByLocation(_IsochroneJobExecutorBase):
                                             os.path.join( self.outputFolder, matrix_filename ), 
                                             runDate) 
 
-            threadPool.submit( self._compressFiles, 
+            if self.config.isochrone_configuration.compress_output_files:
+                threadPool.submit( self._compressFiles, 
                                isochrones_dir, 
                                '*.geojson',
                               f'runDate_{runDate}_modelDate_{self.config.date.isoformat()}_batch{idx+1:03}.geoJson.zip' )
@@ -348,8 +381,10 @@ class _IsochroneJobExecutorGroupByLocation(_IsochroneJobExecutorBase):
         #wait for CSV writes to complete
         threadPool.shutdown()
 
-        #logger.info("compressing travel time matrix file (%s)", matrix_filename)             
-        #self._compressFiles( self.outputFolder, matrix_filename + ".csv", matrix_filename + ".zip")
+        if self.config.isochrone_configuration.compress_output_files:
+            logger.info("compressing travel time matrix file (%s)", matrix_filename)             
+            self._compressFiles( self.outputFolder, matrix_filename + ".csv", matrix_filename + ".zip")
+
         self._csv_header_written = False
 
         return errorCount

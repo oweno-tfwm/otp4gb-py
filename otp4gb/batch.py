@@ -114,7 +114,7 @@ def build_run_spec(
 
 
 def setup_worker(config):
-    global _output_dir, _buffer_size, _FILENAME_PATTERN, _name_key, _centroids, _test_origin_areas, _centroids_origin_sindex
+    global _output_dir, _buffer_size, _FILENAME_PATTERN, _name_key, _centroids, _test_origin_areas, _centroids_origin_sindex, _fanout_directory
     _output_dir = config.get("output_dir")
     _buffer_size = config.get("buffer_size")
     _FILENAME_PATTERN = config.get("FILENAME_PATTERN")
@@ -132,6 +132,7 @@ def setup_worker(config):
         _centroids.origins.to_crs(crs=_PROCESSING_CRS, inplace=True)
         
     _centroids_origin_sindex = _centroids.origins.sindex
+    _fanout_directory = config.get("fanout_directory")
 
 
 
@@ -442,7 +443,12 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
         filename = str(uuid.uuid4()).replace('-', '') + '-' + mode + '-' + str(int(journey_time / 60)) + '.geojson'                            
 
         # Write isochrone
-        with open(os.path.join(_output_dir, filename), "w") as f:
+        if (_fanout_directory):
+            directory = os.path.join(_output_dir, "mode="+mode, "travelTime="+str(int(row['travelTime'])) )
+        else:
+            directory = _output_dir
+
+        with open(os.path.join(directory, filename), "w") as f:
             write_valid_json(row,f)
 
         if len(_centroids.origins) > 0 :

@@ -317,13 +317,16 @@ If the 'destination_centroids' file does not exist then the 'centroids' location
 
 This uses a number of additional configuration options (within the same config file), and interprets some config values in a different way.
 
-| Parameter                    | Sub-Parameter         | Type                             | Default              | Description                                                                                                               |
-| :--------------------------- | :-------------------- | :------------------------------- | :------------------- | :------------------------------------------------------------------------------------------------------------------------ |
-| step_minutes                 | -                     | integer (minutes)                | 15                   | **Optional** A series of isochrones is generated up to the maximum travel time, this specifies the interval between bands.|
-| buffer_metres                | -                     | integer (metres)                 | 100                  | **Optional** To fix invalid geometries the isochrone can be buffered. Size of buffer to apply. Expensive function to call.|
-| zone_column                  | -                     | string                           | "zone_id"            | **Optional** Column which specifies the zone name / number. Must be unique or values may be over-written.                 |
-| union_all_times              | -                     | boolean                          | False                | **Optional** Where multiple arrival times are specified - do we union all the generated isochrones together               |
-| arrive_by                    | -                     | boolean                          | True                 | **Optional** If the isochrone requested has the time specified as 'arrive by'(True) or 'depart by'(False)                 |
+| Parameter                    | Sub-Parameter         | Type                             | Default              | Description                                                                                                                  |
+| :--------------------------- | :-------------------- | :------------------------------- | :------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
+| step_minutes                 | -                     | integer (minutes)                | 15                   | **Optional** A series of isochrones is generated up to the maximum travel time, this specifies the interval between bands.   |
+| buffer_metres                | -                     | integer (metres)                 | 100                  | **Optional** To fix invalid geometries the isochrone can be buffered. Size of buffer to apply. Expensive function to call.   |
+| zone_column                  | -                     | string                           | "zone_id"            | **Optional** Column which specifies the zone name / number. Must be unique or values may be over-written.                    |
+| union_all_times              | -                     | boolean                          | False                | **Optional** Where multiple arrival times are specified - do we union all the generated isochrones together                  |
+| arrive_by                    | -                     | boolean                          | True                 | **Optional** If the isochrone requested has the time specified as 'arrive by'(True) or 'depart by'(False)                    |
+| compress_output_files        | -                     | boolean                          | True                 | **Optional** specifies if output files are zipped up (in batches)                                                            |
+| fanout_directory             | -                     | boolean                          | False                | **Optional** fans out files into multiple directories. fanout_directory=true is incompatible with compress_output_files=true |
+
 
 
 'union_all_times' is provided to allow softening of the effect of the frequency of public transport services. A series of arrival times can be specified, with the isochrone created being the union of all the accessible areas to illustrate the maximum accessible area. This assumes that passengers can to a degree flex their arrival time and / or passenger perception is not completely reliant on a hard arrival time, but the duration of their journey from door-to-door.
