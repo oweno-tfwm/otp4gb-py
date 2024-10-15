@@ -446,7 +446,7 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
 
         # Write isochrone
         if (_fanout_directory):
-            directory = os.path.join(_output_dir, "mode="+modename_safe_for_filename, "travelTime="+str(int(row['travelTime'].iloc[0])) )
+            directory = os.path.join(_output_dir, "mode="+modename_safe_for_filename, "traveltime="+str(int(row['travelTime'].iloc[0])) )
         else:
             directory = _output_dir
 
