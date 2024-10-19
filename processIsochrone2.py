@@ -195,7 +195,7 @@ class _IsochroneJobExecutorBase(IsochroneJobExecutor):
                 modeText = "mode=" + "_".join(mode)
 
                 for t in travelTimes:
-                    IsochroneJobExecutor._mkdir( os.path.join( outputDir, modeText, "travelTime="+str(t), "" ) )
+                    IsochroneJobExecutor._mkdir( os.path.join( outputDir, modeText, "traveltime="+str(t), "" ) )
 
         return jobs
 
