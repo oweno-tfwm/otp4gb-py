@@ -4,6 +4,7 @@ import operator
 import os
 import geopandas as gpd
 import pandas as pd
+#pd.options.mode.chained_assignment = 'raise'  # TEMPORARY 
 import re
 import threading
 import uuid
@@ -410,7 +411,7 @@ def saveIsochronesAndGenerateMatrix( batchResponses: gpd.GeoDataFrame,
     # Calculate all possible origins within travel time by minutes
     for i in range(batchResponses.shape[0]):
         
-        row = batchResponses.iloc[[i]]
+        row = batchResponses.iloc[[i]].copy()
         
         journey_time = int(row.time.iloc[0])
         
