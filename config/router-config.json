@@ -1,5 +1,16 @@
 {
-    "streetRoutingTimeout": "10s",
-    "routingDefaults": {
+    "streetRoutingTimeout": "PT30S",
+    "routingDefaults": {	  
+
+	"drivingDirection": "left",
+	
+	"accessEgress" : {
+	  "maxDurationForMode": {
+		"WALK": "PT20M",
+		"BIKE": "PT10M",
+		"BIKE-TO-PARK": "PT10M"
+	  }
+    }	  
+		
     }
 }

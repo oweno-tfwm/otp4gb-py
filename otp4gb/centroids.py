@@ -98,6 +98,8 @@ def _read_centroids(
         data = gpd.GeoDataFrame(
             data.loc[:, zone_columns ], geometry=points.values, crs=_CENTROIDS_CRS )    
 
+    LOG.info("read centroid file '%s' rows=%d", path, len(data) )
+
     return data
 
 

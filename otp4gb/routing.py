@@ -34,7 +34,53 @@ OTP_ERRORS = {
 
 
 ##### CLASSES #####
-# see otp source TransitMode.modesConsideredTransitByUsers()  and enum ApiRequestMode  
+# see otp source TransitMode.modesConsideredTransitByUsers()  and enum ApiRequestMode  and  enum Qualifier
+#
+# this is far more complicated than it should be. The OTP documentation uses internal names, and the values to use in the APIs are not clearly listed.
+# the rest API is being depreciated, which makes the documentation even less helpful.
+# it has also been extended, so it seems that the mode string supplied to the API can be a base mode with a series of underscore delimited qualifiers tacked on the end.
+# in v 2.5 of otp the qualifiers are :-
+# RENT,PARK,PICKUP,DROPOFF,ACCESS,EGRESS,DIRECT,HAIL
+# 
+# the base (ApiRequestMode) modes are :-
+# WALK,BICYCLE,SCOOTER,CAR,TRAM,SUBWAY,RAIL,BUS,FERRY,CABLE_CAR,GONDOLA,FUNICULAR,TRANSIT,AIRPLANE,TROLLEYBUS,MONORAIL,CARPOOL,TAXI,FLEX
+#
+# Transit = RAIL,COACH,SUBWAY,BUS,TRAM,FERRY,AIRPLANE,CABLE_CAR,GONDOLA,FUNICULAR,TROLLEYBUS,MONORAIL,TAXI
+# (note how this includes taxi - basically everything apart from carpool) 
+#
+# see also this code in the OTP web client.
+'''otp.config.modes = {
+    "TRANSIT,WALK"             : _tr("Transit"),
+    "BUS,WALK"                 : _tr("Bus Only"),
+    "TRAM,RAIL,SUBWAY,FUNICULAR,GONDOLA,WALK": _tr("Rail Only"),
+    "AIRPLANE,WALK"            : _tr("Airplane Only"),
+    "BUS,TRAM,RAIL,FERRY,SUBWAY,FUNICULAR,GONDOLA,WALK" : _tr("Transit, No Airplane"),
+    "BICYCLE"                  : _tr('Bicycle Only'),
+    "TRANSIT,BICYCLE"          : _tr("Bicycle &amp; Transit"),
+    "WALK"                     : _tr('Walk Only'),
+    "CAR"                      : _tr('Car Only'),
+    "CAR_PICKUP"               : _tr('Taxi'),
+    "CAR_PARK,TRANSIT"         : _tr('Park and Ride'),
+    "CAR_PICKUP,TRANSIT"       : _tr('Ride and Kiss (Car Pickup)'),
+    "CAR_DROPOFF,TRANSIT"      : _tr('Kiss and Ride (Car Dropoff)'),
+    "BICYCLE_PARK,TRANSIT"     : _tr('Bike and Ride'),
+    //uncomment only if bike rental exists in a map
+    // TODO: remove this hack, and provide code that allows the mode array to be configured with different transit modes.
+    //       (note that we've been broken for awhile here, since many agencies don't have a 'Train' mode either...this needs attention)
+    // IDEA: maybe we start with a big array (like below), and the pull out modes from this array when turning off various modes...
+    'BICYCLE_RENT'             : _tr('Rented Bicycle'),
+    'TRANSIT,BICYCLE_RENT'     : _tr('Transit & Rented Bicycle'),
+    'SCOOTER_RENT'             : _tr('Rented Scooter'),
+    'TRANSIT,SCOOTER_RENT'     : _tr('Transit & Rented Scooter'),
+    "FLEX_ACCESS,WALK,TRANSIT" : _tr('Transit with flex access'),
+    "FLEX_EGRESS,WALK,TRANSIT" : _tr('Transit with flex egress'),
+    "FLEX_ACCESS,FLEX_EGRESS,TRANSIT" : _tr('Transit with flex access and egress'),
+    "FLEX_DIRECT"              : _tr('Direct flex search'),
+    "CARPOOL,WALK"             : _tr("Carpool"),
+    "CAR_HAIL,TRANSIT,WALK"    : _tr("Car hailing and transit")
+};'''
+
+
 class Mode(enum.StrEnum):
     TRANSIT = "TRANSIT" #RAIL, COACH, SUBWAY, BUS, TRAM, FERRY, AIRPLANE, CABLE_CAR, GONDOLA, FUNICULAR, TROLLEYBUS, MONORAIL, TAXI;
     BUS = "BUS" #included in 'transit'
@@ -42,6 +88,7 @@ class Mode(enum.StrEnum):
     TRAM = "TRAM" #included in 'transit'
     WALK = "WALK"
     BICYCLE = "BICYCLE"
+    BICYCLE_PARK = "BICYCLE_PARK" #just adding in the _park qualifier for bicycle at the moment
     SCOOTER = "SCOOTER"
     CAR = "CAR"
     SUBWAY = "SUBWAY" #included in 'transit'

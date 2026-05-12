@@ -4,6 +4,11 @@
 	"readCachedElevations": true,
 	"writeCachedElevations": true,
 	
+	"staticParkAndRide": true,
+	"staticBikeParkAndRide": true,
+	
+	"transitModelTimeZone": "Europe/London",
+	
 	"platformEntriesLinking": true,
 	"osmWayPropertySet": "uk",
 	"osmDefaults" : {
