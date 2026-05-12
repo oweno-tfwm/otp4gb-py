@@ -45,6 +45,7 @@ class ProcessConfig(caf.toolkit.BaseConfig):
     end_date: Optional[datetime.date]
     extents: Bounds
     osm_file: str
+    elevation_file: Optional[str] = ""
     gtfs_files: list[str]
     time_periods: list[TimePeriod]
     modes: list[list[routing.Mode]]

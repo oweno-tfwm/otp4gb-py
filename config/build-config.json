@@ -1,4 +1,9 @@
 {
+	"distanceBetweenElevationSamples": 30.0,
+	
+	"readCachedElevations": true,
+	"writeCachedElevations": true,
+	
 	"platformEntriesLinking": true,
 	"osmWayPropertySet": "uk",
 	"osmDefaults" : {

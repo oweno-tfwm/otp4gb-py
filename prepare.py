@@ -157,6 +157,9 @@ def main():
             extents=extents,
         )
 
+        if config.elevation_file:
+            shutil.copy(os.path.join(ASSET_DIR, config.elevation_file), filtered_graph_folder)
+
         write_build_config(filtered_graph_folder, opt_date, opt_endDate)
         shutil.copy(os.path.join(CONF_DIR, "router-config.json"), filtered_graph_folder)
         shutil.copy(os.path.join(CONF_DIR, "otp-config.json"), filtered_graph_folder)
