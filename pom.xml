@@ -44,10 +44,6 @@
         <configuration>
           <fileSets>
             <fileSet>
-              <sourceFile>bin/lib/gtfs-filter-v0.1.1.jar</sourceFile>
-              <destinationFile>bin/gtfs-filter-0.1.jar</destinationFile>
-            </fileSet>
-            <fileSet>
               <sourceFile>bin/lib/otp-2.5.0-shaded.jar</sourceFile>
               <destinationFile>bin/otp-2.5.0-shaded.jar</destinationFile>
             </fileSet>                
