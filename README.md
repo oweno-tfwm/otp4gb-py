@@ -25,6 +25,8 @@ Java Standard Edition Development Kit (JDK) is required for running the OTP serv
 JDK installers are available for Windows, Mac and Linux[^1] from
 [Oracle's website](https://www.oracle.com/uk/java/technologies/downloads/#jdk17-windows).
 
+Open JDK is not subject to commercial licence restrictions and is hence preferred for this tool [open JDK](https://openjdk.org/).
+
 Once installed you can check the installation has completed correctly and you have the correct
 version using the command `java --version`. If this command fails make sure JDK has been added to
 the PATH environment variable.
@@ -39,8 +41,9 @@ pip could be used. Miniconda installers are avaiable from the
 Once installed, run "Anaconda Prompt (Miniconda3)" to open a command prompt with access to the
 conda commands then run the following commands.
 
+- Check the names of currently created environments: `conda env list`
 - Move to the OTP4GB-Py directory: `cd "path\to\otp4gb-py"`
-- Create a new conda environment and install the dependancies (this may take a few minutes to
+- Create a new conda environment and install the dependancies (changing name if required)(this may take a few minutes to
   complete): `conda create -n otp4gb-py --file requirements.txt -y -c conda-forge`
 - Activate the environment: `conda activate otp4gb-py`
 
@@ -58,18 +61,25 @@ Python script, which is provided with the tool. Running setup is done with the c
 - Firstly, the script will open a web browser and ask the user to download the Open
   Street Map (OSM) converter (osmconvert64.exe) and place it in the "bin" directory.
   The existance of this file in the correct location will be checked before the script
-  moves on.
+  moves on. (the downloaded file must be renamed or copied to be 'osmconvert64.exe')
+  Note the comments on the OSM Convert wiki page about windows versions of the binary with large file support [OSM Convert wiki page](https://wiki.openstreetmap.org/wiki/Osmconvert).
+  
 - Next the script automatically downloads and installs
   [Maven](https://maven.apache.org/) into the "bin" folder.
-- Finally, it will use maven to install GTFS filter and OTP.
+- Finally, it will use maven to install OTP.
 
-After the setup script has finished the bin folder should contain the following files
+- Download version 0.3 of GTFS filter from github and copy this into the "bin" folder. 
+  This has a bug fix relating to dates, and updated to allow 'new' fields in GTFS spec to flow through such as the flag that indicated that bikes can be taken on trains, but is not available from a repo because the maintainer of the project appears to no longer be active and accepting merges into the trunk. 
+  [fixed version of GTFS filter](https://github.com/oweno-tfwm/gtfs-filter/tree/time_option_multi_values/target).
+
+
+After the setup script and manual steps are completed the bin folder should contain the following files
 and folders:
 
-- apache-maven-3.8.6: folder containing the maven installation
+- apache-maven-3.10.0: folder containing the maven installation
 - lib: java dependancies
-- gtfs-filter-0.1.jar: GTFS filter Java executable file
-- otp-2.3.0-shaded.jar: OTP server Java executable file
+- gtfs-filter-0.3.jar: GTFS filter Java executable file
+- otp-2.5.0-shaded.jar: OTP server Java executable file
 - osmconvert64: OSM converter executable file
 
 The final requirement before running the tool is to fill the "assets" directory with
