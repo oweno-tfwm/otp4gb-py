@@ -43,7 +43,7 @@ conda commands then run the following commands.
 
 - Check the names of currently created environments: `conda env list`
 - Move to the OTP4GB-Py directory: `cd "path\to\otp4gb-py"`
-- Create a new conda environment and install the dependancies (changing name if required)(this may take a few minutes to
+- Create a new conda environment and install the dependancies (changing name if required)(this may take up to 50 minutes to
   complete): `conda create -n otp4gb-py --file requirements.txt -y -c conda-forge`
 - Activate the environment: `conda activate otp4gb-py`
 
