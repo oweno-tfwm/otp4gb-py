@@ -68,7 +68,7 @@ Python script, which is provided with the tool. Running setup is done with the c
   [Maven](https://maven.apache.org/) into the "bin" folder.
 - Finally, it will use maven to install OTP.
 
-- Download version 0.3 of GTFS filter from github and copy this into the "bin" folder. 
+- Download version 0.3 of GTFS filter (.zip file including dependant libs) from github and unzip this into the "bin" and "bin/lib" folders. 
   This has a bug fix relating to dates, and updated to allow 'new' fields in GTFS spec to flow through such as the flag that indicated that bikes can be taken on trains, but is not available from a repo because the maintainer of the project appears to no longer be active and accepting merges into the trunk. 
   [fixed version of GTFS filter](https://github.com/oweno-tfwm/gtfs-filter/tree/time_option_multi_values/target).
 
@@ -117,6 +117,7 @@ in table 1.
 | ^                            | max_lat               | Real                                                             | N/A                                    | ^                                                                                                               |
 | ^                            | max_lon               | Real                                                             | N/A                                    | ^                                                                                                               |
 | osm_file                     | -                     | File name                                                        | N/A                                    | Name of the OSM data file, expected to be found in the "assets" folder.                                         |
+| elevation_file               | -                     | File name                                                        | N/A                                    | Name of the elevation data .tiff file, expected to be found in the "assets" folder.                                         |
 | gtfs_files                   | -                     | List of file names                                               | N/A                                    | List of all the GTFS zip files, should be in the "assets" folder.                                               |
 | time_periods                 | name                  | Text                                                             | N/A                                    | List of time periods with sub-parameter name used for naming the output folder.                                 |
 | ^                            | travel_time           | Time (HH:MM)                                                     | N/A                                    | Time routes must arrive at the destination by.                                                                  |
@@ -168,6 +169,11 @@ The prepare script performs the following steps (corresponds to the "OTP4GB-Py P
 - Infills the date and copies the [build config](config/build-config.json) to the filtered folder.
 - Copies the [router config](config/router-config.json) to the filtered folder.
 - Runs OTP to build the graph file in the filtered folder.
+
+It is recommended to pipe the output of the prepare stage to a log file so it can be reviewed.
+```
+python prepare.py -F <config path> > <log file name>.log 2>&1
+```
 
 Once complete the output folder should contain a new sub-folder `graphs\filtered`, with all the
 prepared files, ready to run the process script.
@@ -227,12 +233,14 @@ the timescales.
 
 ### Server
 Another optional script is server.py, which allows running the OTP server for an existing prepared
-output folder without performing the processing calculations. The server is ran on the local machine
-by default and can be connected to through a web browser at http://localhost:8080/.
+output folder without performing the processing calculations. The server is run on the local machine
+by default and can be connected to through a web browser at http://localhost:8080/ (or other port number if specified). 
+Secure https port is by default one port number higher than http port (e.g. 8081). 
 
 Running the server script is done with the following command[^2]:
 ```
-python server.py <directory>
+python server.py <directory> <port number> -v
+
 ```
 
 ## Outputs
